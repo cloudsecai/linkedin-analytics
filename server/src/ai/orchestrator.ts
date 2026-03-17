@@ -238,6 +238,17 @@ In one sentence, explain why this post resonated with the audience.`,
             .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
             .map((b) => b.text)
             .join("");
+          logger.log({
+            step: "top_performer_reason",
+            model: MODELS.HAIKU,
+            input_messages: JSON.stringify([{ role: "user", content: `[top performer reason for ${topPerformer.id}]` }]),
+            output_text: reasonText,
+            tool_calls: null,
+            input_tokens: reasonResponse.usage.input_tokens,
+            output_tokens: reasonResponse.usage.output_tokens,
+            thinking_tokens: 0,
+            duration_ms: 0,
+          });
           topPerformerReason = `"${topPerformer.preview ?? "Post"}" (${new Date(topPerformer.published_at).toLocaleDateString()}) — ${reasonText}`;
         } catch {
           // Fallback to template if LLM call fails

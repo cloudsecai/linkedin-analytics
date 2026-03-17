@@ -128,7 +128,8 @@ ${topPerformerInfo}
 ${quickInsights.join("\n")}
 
 ## Instructions
-Write a concise 2-3 sentence summary of the author's LinkedIn content performance. Highlight the most important trend and the top-performing post. Keep it actionable and encouraging.`;
+Write a concise 2-3 sentence summary of the author's LinkedIn content performance. Highlight the most important trend and the top-performing post. Keep it actionable and encouraging.
+${LANGUAGE_RULES}`;
 }
 
 export function taxonomyPrompt(postSummaries: string): string {
