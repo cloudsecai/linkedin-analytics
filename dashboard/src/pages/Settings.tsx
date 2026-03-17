@@ -12,6 +12,8 @@ export default function Settings() {
   const [promptHistory, setPromptHistory] = useState<import("../api/client").WritingPromptHistory[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [promptLoading, setPromptLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings/author-photo", { method: "HEAD" })
@@ -64,6 +66,41 @@ export default function Settings() {
       setPhotoUrl(null);
     } catch {
       setPhotoError("Delete failed");
+    }
+  };
+
+  const handleCopyPrompt = async () => {
+    setCopyLoading(true);
+    try {
+      const res = await fetch("/api/posts/top-examples?limit=10");
+      const data = await res.json();
+      const topPosts = data.posts as Array<{
+        full_text: string;
+        published_at: string;
+        impressions: number;
+        engagement_rate: number | null;
+      }>;
+
+      let assembled = promptText;
+      if (topPosts.length > 0) {
+        assembled += "\n\n---\n\nHere are my top 10 best performing LinkedIn posts for tone and style reference:\n\n";
+        assembled += topPosts.map((p, i) => {
+          const date = new Date(p.published_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+          const eng = p.engagement_rate != null ? (p.engagement_rate * 100).toFixed(1) + "%" : "N/A";
+          return `${i + 1}. [${date}] (Impressions: ${p.impressions.toLocaleString()}, Engagement: ${eng})\n${p.full_text}`;
+        }).join("\n\n");
+      }
+
+      await navigator.clipboard.writeText(assembled);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback: copy just the prompt text
+      await navigator.clipboard.writeText(promptText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } finally {
+      setCopyLoading(false);
     }
   };
 
@@ -169,6 +206,14 @@ export default function Settings() {
             className="px-4 py-2 rounded-md text-sm font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors disabled:opacity-50"
           >
             {promptLoading ? "Saving..." : promptSaved ? "Saved" : "Save Prompt"}
+          </button>
+          <button
+            onClick={handleCopyPrompt}
+            disabled={copyLoading || !promptText.trim()}
+            className="px-4 py-2 rounded-md text-sm font-medium bg-surface-2 text-text-primary hover:bg-surface-3 transition-colors disabled:opacity-50"
+            title="Copy prompt with your top 10 performing posts appended (excludes announcements)"
+          >
+            {copyLoading ? "Loading..." : copied ? "Copied!" : "Copy with Top Posts"}
           </button>
         </div>
 
