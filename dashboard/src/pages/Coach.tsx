@@ -4,6 +4,9 @@ import {
   type Recommendation,
   type Insight,
   type Changelog,
+  type PromptSuggestions,
+  type PromptSuggestion,
+  type AnalysisGap,
 } from "../api/client";
 
 function getPriorityLabel(p: number | string): { label: string; classes: string } {
@@ -44,6 +47,11 @@ export default function Coach() {
   const [reasonMap, setReasonMap] = useState<Record<number, string>>({});
   const [showReasonFor, setShowReasonFor] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestions | null>(null);
+  const [gaps, setGaps] = useState<AnalysisGap[]>([]);
+  const [gapsOpen, setGapsOpen] = useState(false);
+  const [acceptedSuggestions, setAcceptedSuggestions] = useState<Set<number>>(new Set());
+  const [rejectedSuggestions, setRejectedSuggestions] = useState<Set<number>>(new Set());
 
   const load = () => {
     api
@@ -67,6 +75,8 @@ export default function Coach() {
       })
       .catch(() => {});
     api.insightsChangelog().then(setChangelog).catch(() => {});
+    api.insightsPromptSuggestions().then((r) => setPromptSuggestions(r.prompt_suggestions)).catch(() => {});
+    api.insightsGaps().then((r) => setGaps(r.gaps)).catch(() => {});
   };
 
   useEffect(load, []);
@@ -94,6 +104,21 @@ export default function Coach() {
       api.recommendationFeedback(id, feedbackMap[id], reason).catch(() => {});
     }
     setShowReasonFor(null);
+  };
+
+  const handleAcceptSuggestion = async (index: number, suggestion: PromptSuggestion) => {
+    const currentPromptRes = await api.getWritingPrompt().catch(() => ({ text: null }));
+    const currentText = currentPromptRes.text ?? "";
+    const newText = currentText.includes(suggestion.current)
+      ? currentText.replace(suggestion.current, suggestion.suggested)
+      : currentText + "\n" + suggestion.suggested;
+
+    await api.saveWritingPrompt(newText, "ai_suggestion", suggestion.evidence).catch(() => {});
+    setAcceptedSuggestions((prev) => new Set([...prev, index]));
+  };
+
+  const handleRejectSuggestion = (index: number) => {
+    setRejectedSuggestions((prev) => new Set([...prev, index]));
   };
 
   const changelogSections: { key: keyof Changelog; label: string; color: string }[] = [
@@ -276,6 +301,63 @@ export default function Coach() {
         </div>
       )}
 
+      {/* Writing Prompt Review */}
+      {promptSuggestions && (
+        <div className="space-y-3">
+          <h3 className="text-lg font-semibold">Writing Prompt Review</h3>
+          {promptSuggestions.assessment === "working_well" ? (
+            <div className="flex items-center gap-2 text-sm text-positive">
+              <span className="w-2 h-2 rounded-full bg-positive" />
+              Your writing prompt is aligned with what's performing.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-text-secondary">{promptSuggestions.reasoning}</p>
+              {promptSuggestions.suggestions.map((s, i) => {
+                if (rejectedSuggestions.has(i)) return null;
+                if (acceptedSuggestions.has(i)) {
+                  return (
+                    <div key={i} className="bg-positive/5 border border-positive/20 rounded-lg px-4 py-3">
+                      <span className="text-xs text-positive font-medium">Applied</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={i} className="bg-surface-1 border border-border rounded-lg p-4 space-y-2">
+                    <div className="text-xs text-text-muted uppercase tracking-wider font-medium">Suggestion</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="text-xs text-text-muted mb-1">Current</div>
+                        <p className="text-sm bg-surface-2 rounded px-3 py-2 text-text-secondary">{s.current}</p>
+                      </div>
+                      <div>
+                        <div className="text-xs text-text-muted mb-1">Suggested</div>
+                        <p className="text-sm bg-accent/5 border border-accent/15 rounded px-3 py-2 text-text-primary">{s.suggested}</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-text-muted">{s.evidence}</p>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => handleAcceptSuggestion(i, s)}
+                        className="px-3 py-1 rounded text-xs font-medium bg-positive/10 text-positive hover:bg-positive/20 transition-colors"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => handleRejectSuggestion(i)}
+                        className="px-3 py-1 rounded text-xs font-medium bg-surface-2 text-text-muted hover:text-text-primary transition-colors"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* What Changed section */}
       {hasChangelog && (
         <div className="space-y-4">
@@ -304,6 +386,43 @@ export default function Coach() {
                   ))}
                 </div>
               ),
+          )}
+        </div>
+      )}
+
+      {/* What's Limiting Your Insights */}
+      {gaps.length > 0 && (
+        <div className="space-y-2">
+          <button
+            onClick={() => setGapsOpen((v) => !v)}
+            className="flex items-center gap-2 text-sm text-text-muted hover:text-text-primary transition-colors"
+          >
+            <span className={`transition-transform ${gapsOpen ? "rotate-90" : ""}`}>&#9654;</span>
+            What's limiting your insights
+            <span className="text-xs bg-surface-2 px-2 py-0.5 rounded-full">{gaps.length}</span>
+          </button>
+          {gapsOpen && (
+            <div className="space-y-2">
+              {gaps.map((gap) => (
+                <div
+                  key={gap.id}
+                  className={`bg-surface-1 border rounded-md px-4 py-3 ${
+                    gap.times_flagged >= 3 ? "border-warning/40" : "border-border"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-text-muted uppercase">{gap.gap_type.replace("_", " ")}</span>
+                    {gap.times_flagged >= 3 && (
+                      <span className="text-xs bg-warning/10 text-warning px-2 py-0.5 rounded-full">
+                        {gap.times_flagged}x flagged
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-text-primary mt-1">{gap.description}</p>
+                  <p className="text-xs text-text-muted mt-0.5">{gap.impact}</p>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

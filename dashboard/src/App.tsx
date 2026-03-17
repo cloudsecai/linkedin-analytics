@@ -18,6 +18,11 @@ export default function App() {
     api.health().then(setHealth).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    api.setTimezone(tz).catch(() => {});
+  }, []);
+
   const hasErrors = health?.sources
     ? Object.values(health.sources).some((s) => s.status === "error")
     : false;
