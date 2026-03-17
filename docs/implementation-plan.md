@@ -23,7 +23,7 @@ Done manually via Chrome DevTools on a live LinkedIn session. Findings in `docs/
 1. Set up Fastify server in `server/src/index.ts`
 2. Implement SQLite schema initialization with WAL mode (`server/src/db/schema.sql`)
 3. Implement migration runner (`schema_version` table + sequential `.sql` files)
-4. Implement `POST /api/ingest` with Zod validation (updated schema includes `members_reached`, `saves`, `sends`)
+4. Implement `POST /api/ingest` with Zod validation (schema includes `members_reached`, `saves`, `sends`, video metrics: `video_views`, `watch_time_seconds`, `avg_watch_time_seconds`, and profile: `all_appearances`)
 5. Implement `GET /api/health`
 6. Implement `GET /api/posts` with filtering, sorting, pagination
 7. Implement `GET /api/metrics/:postId`
@@ -36,27 +36,32 @@ Done manually via Chrome DevTools on a live LinkedIn session. Findings in `docs/
 
 ## Phase 3: Chrome Extension — Core
 
-1. Create manifest.json with all permissions
+1. Create manifest.json with all permissions (include `tabs`; NO `web_accessible_resources`)
 2. Build service worker (`background/`):
    - `chrome.alarms` registration (re-register on every worker start)
    - Alarm handler: check health endpoint, determine if sync needed
+   - Background tab management: `chrome.tabs.create({active: false})`, sequential navigation via `chrome.tabs.update()`
    - Message listener for content script relay
    - POST to localhost `/api/ingest`
    - Sync state management (`chrome.storage.local` for timestamps, `chrome.storage.session` for transient state)
 3. Build content script (`content/`):
-   - **DOM scrapers** for each analytics page (the primary data collection method):
-     - Top posts scraper: `/analytics/creator/top-posts?timeRange=past_30_days&metricType=IMPRESSIONS` → extract post IDs, content previews, reactions, comments, impressions
-     - Post detail scraper: `/analytics/post-summary/urn:li:activity:{id}/` → extract impressions, members reached, reactions, comments, reposts, saves, sends, demographics
-     - Audience scraper: `/analytics/creator/audience` → extract total followers, new follower data
+   - **Page readiness:** Poll for key selectors (e.g., `.member-analytics-addon__mini-update-item`) with 10s timeout before scraping
+   - **DOM scrapers** for each analytics page (see `docs/dom-selectors.md` for full selector reference):
+     - Top posts scraper: `/analytics/creator/top-posts?timeRange=past_30_days&metricType=IMPRESSIONS` → extract post IDs, content previews, reactions, comments, impressions. Derive `published_at` from activity ID snowflake. Detect content type from thumbnail src (`videocover` = video, `.ivm-image-view-model` = image, else text).
+     - Post detail scraper: `/analytics/post-summary/urn:li:activity:{id}/` → extract impressions, members reached, reactions, comments, reposts, saves, sends. For video posts: also extract video views, watch time, avg watch time from "Video performance" card.
+     - Audience scraper: `/analytics/creator/audience` → extract total followers
      - Profile views scraper: `/analytics/profile-views/` → extract profile view count
-     - Search appearances scraper: `/analytics/search-appearances/` → extract appearance count, breakdown
+     - Search appearances scraper: `/analytics/search-appearances/` → extract all appearances, search appearances
+   - **Content type alert:** If an unknown media type is encountered (not text/image/video), surface a notification in the extension popup
    - **Voyager API client** (identity resolution only): resolve user profile URN via `/voyager/api/me`
    - Zod schema validation on every scraped data set
    - Relay collected data to service worker via `chrome.runtime.sendMessage`
+   - **Read-only:** Content script must NOT inject visible DOM elements into LinkedIn pages
 4. Handle SPA navigation via `chrome.webNavigation.onHistoryStateUpdated`
 5. Implement sync chunking (batches of 25 post detail pages, follow-up alarms)
 6. Implement offline queue in `chrome.storage.local` with 5MB cap
 7. **Metric decay logic:** Only scrape post detail pages for posts <30 days old. On first install (backfill), scrape `past_365_days` for all available posts.
+8. **Pacing:** 1-3s random delays between navigations (2-5s during initial backfill)
 
 ## Phase 4: Extension Popup
 

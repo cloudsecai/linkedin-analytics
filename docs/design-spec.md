@@ -61,16 +61,17 @@ Two modules inside the extension:
 - Scheduled via `chrome.alarms` (not `setTimeout` — service workers die after 30s of inactivity)
 - On alarm fire, checks last sync time via `GET localhost:3210/api/health`
 - If 24+ hours since last sync AND user has a `linkedin.com` tab open, triggers sync
-- **Collection via DOM scraping:** The content script navigates to LinkedIn analytics pages in a background tab and extracts data from the server-rendered HTML. Analytics data is baked into the page — there are no separate API calls to intercept.
+- **Collection via DOM scraping:** The service worker creates a single background tab (`chrome.tabs.create({active: false})`) and navigates it sequentially through analytics pages. The content script (auto-injected via manifest `matches`) scrapes the rendered HTML on each page and relays data to the service worker via `chrome.runtime.sendMessage`. The tab is closed after the scrape sequence completes.
 - **Scrape sequence per sync:**
   1. Open `/analytics/creator/top-posts?timeRange=past_30_days&metricType=IMPRESSIONS` → extract post list (IDs, content preview, reactions, comments, impressions)
-  2. For each post <30 days old, navigate to `/analytics/post-summary/urn:li:activity:{id}/` → extract detailed metrics (impressions, reach, reactions, comments, reposts, saves, sends, demographics)
-  3. Navigate to `/analytics/creator/audience` → extract total followers, new follower data
+  2. For each post <30 days old, navigate to `/analytics/post-summary/urn:li:activity:{id}/` → extract detailed metrics (impressions, reach, reactions, comments, reposts, saves, sends, video metrics if applicable)
+  3. Navigate to `/analytics/creator/audience` → extract total followers
   4. Navigate to `/analytics/profile-views/` → extract profile view count
-  5. Navigate to `/analytics/search-appearances/` → extract appearance count and breakdown
+  5. Navigate to `/analytics/search-appearances/` → extract all appearances, search appearances
 - Content script relays scraped data to service worker via `chrome.runtime.sendMessage`, service worker POSTs to `localhost:3210/api/ingest`
 - Uses the user's existing session cookies — page loads are identical to normal browsing
-- Human-like pacing: 1-3 second random delays between page navigations
+- Human-like pacing: 1-3 second random delays between page navigations (2-5 seconds during initial backfill)
+- **Page readiness:** Content script polls for key selectors (e.g., `.member-analytics-addon__mini-update-item`) before scraping, with a 10-second timeout. This handles LinkedIn's lazy rendering.
 - **Metric decay:** Posts older than 30 days are not re-scraped — their metrics have plateaued. Only the initial backfill scrapes the full 365-day history.
 - **Sync chunking:** To stay within the MV3 5-minute service worker hard limit, syncs are chunked into batches of 25 posts. Each batch completes independently (data POSTed to server), and the next batch is triggered via a follow-up alarm. If the worker is killed mid-sync, it resumes from the last completed batch on the next alarm.
 - Sync timestamps persisted to `chrome.storage.local` (survives browser restarts). Transient state (in-progress flag, current batch cursor) stored in `chrome.storage.session`.
@@ -108,14 +109,30 @@ csrf-token: {jsessionid}   // JSESSIONID value with quotes stripped
 Required manifest permissions:
 ```json
 {
-  "permissions": ["alarms", "cookies", "storage", "webNavigation"],
+  "permissions": ["alarms", "cookies", "storage", "tabs", "webNavigation"],
   "host_permissions": ["*://*.linkedin.com/*", "http://localhost:3210/*"]
 }
 ```
+**Do NOT declare `web_accessible_resources`** — LinkedIn probes for known extensions by checking these URLs.
 
 **Data flow:** Content script (on linkedin.com) navigates to analytics pages and scrapes DOM data (same-origin — cookies sent automatically) → relays scraped data via `chrome.runtime.sendMessage` → service worker POSTs to `localhost:3210/api/ingest`. The service worker needs `host_permissions` for localhost.
 
-Post ID extraction from LinkedIn URLs: `link.match(/activity-(?<postId>\d+)/)?.groups?.postId`
+Post ID extraction from LinkedIn URLs: `link.match(/activity[:-](?<postId>\d+)/)?.groups?.postId`
+
+**Published date derivation:** LinkedIn activity IDs encode the creation timestamp using a snowflake-like scheme (Unix epoch, no offset). No DOM scraping needed for `published_at`:
+```js
+function activityIdToDate(activityId: string): Date {
+  return new Date(Number(BigInt(activityId) >> BigInt(22)));
+}
+```
+
+**Content type detection:** No explicit field in the DOM. Inferred from post list items:
+- **Video:** `<img>` thumbnail src URL contains `"videocover"`. Confirmed on post detail page by presence of "Video performance" card.
+- **Image:** Has `.ivm-image-view-model` element but src does NOT contain `"videocover"`.
+- **Text:** No media elements.
+- **Carousel/Article:** Not yet confirmed in live DOM. If encountered, unknown media types default to `"image"` and the extension surfaces a notification in the popup for manual review.
+
+**DOM selector reference:** Full selector documentation in `docs/dom-selectors.md`.
 
 **SPA Navigation Handling:**
 - LinkedIn is a single-page app — content scripts don't re-fire on client-side route changes
@@ -177,6 +194,9 @@ interface IngestPayload {
     reposts?: number;
     saves?: number;
     sends?: number;
+    video_views?: number;           // Video posts only
+    watch_time_seconds?: number;    // Video posts only
+    avg_watch_time_seconds?: number; // Video posts only
   }>;
   followers?: {
     total_followers: number;
@@ -184,6 +204,7 @@ interface IngestPayload {
   profile?: {
     profile_views?: number;
     search_appearances?: number;
+    all_appearances?: number;
   };
 }
 
@@ -286,7 +307,10 @@ CREATE TABLE post_metrics (
   comments INTEGER,
   reposts INTEGER,
   saves INTEGER,
-  sends INTEGER
+  sends INTEGER,
+  video_views INTEGER,              -- video posts only, NULL for non-video
+  watch_time_seconds INTEGER,       -- video posts only, total watch time in seconds
+  avg_watch_time_seconds INTEGER    -- video posts only, average watch time in seconds
   -- engagement_rate computed at query time: (reactions + comments + reposts) / NULLIF(impressions, 0)
 );
 CREATE INDEX idx_post_metrics_post_id ON post_metrics(post_id);
@@ -300,8 +324,10 @@ CREATE TABLE follower_snapshots (
 
 CREATE TABLE profile_snapshots (
   date DATE PRIMARY KEY,        -- One row per day
-  profile_views INTEGER,
-  search_appearances INTEGER
+  profile_views INTEGER,        -- cumulative (past 90 days as reported by LinkedIn)
+  search_appearances INTEGER,   -- weekly count as reported by LinkedIn
+  all_appearances INTEGER       -- total appearances across LinkedIn (posts, comments, search, etc.)
+  -- daily deltas computed at query time via LAG() window function
 );
 
 CREATE TABLE scrape_log (
@@ -316,7 +342,11 @@ CREATE TABLE scrape_log (
 );
 ```
 
-**Computed fields rationale:** `engagement_rate` and `new_followers` are computed at query time rather than stored. This avoids drift if the formula changes and handles edge cases (NULL impressions, skipped days) correctly without special write-time logic.
+**Raw data principle:** Store raw values as scraped, compute derived metrics at query time. This keeps the schema future-proof — as we start using the platform and find new things we want to calculate, the raw daily snapshots are already there.
+
+**Computed fields:** `engagement_rate`, `new_followers`, and daily deltas for profile views/search appearances are all computed at query time rather than stored. This avoids drift if the formula changes and handles edge cases (NULL impressions, skipped days) correctly without special write-time logic.
+
+**Profile/search snapshot values:** LinkedIn reports profile views as a 90-day cumulative number and search appearances as a weekly count. We store whatever value LinkedIn shows on each scrape day. Daily deltas can be approximated via `LAG()` but won't be precise (a drop in the cumulative number just means old days aged out of the 90-day window, not fewer views).
 
 **Useful query patterns:**
 
@@ -395,10 +425,13 @@ FROM follower_snapshots;
 
 **Anti-detection measures:**
 - All page loads use the user's real browser session, cookies, and IP — indistinguishable from normal browsing
-- Human-like pacing: 1-3 second random delays between page navigations during sync
+- Human-like pacing: 1-3 second random delays between page navigations during sync (2-5s for initial backfill)
 - No headless browsers, no proxy rotation, no fingerprint spoofing needed
-- Daily frequency is low enough to stay well under any rate limits
+- Daily frequency (~30-50 page loads) is well under LinkedIn's rate limit threshold (~900 requests/hour)
 - DOM scraping is less detectable than API calls — it's just loading pages the user would normally visit
+- **Manifest must NOT declare `web_accessible_resources`** — LinkedIn probes for ~3,000 known extensions by checking these resource URLs
+- Content script must NOT inject visible DOM elements into LinkedIn pages — read-only scraping only
+- LinkedIn's anti-scraping focuses on people scraping *other users'* profiles for sales/recruiting; scraping your own analytics is low-scrutiny
 
 ## Error Handling and Resilience
 
