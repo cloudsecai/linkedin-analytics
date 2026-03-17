@@ -33,6 +33,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await trySync();
   } else if (alarm.name === "sync-continue") {
     await continueSyncBatch();
+  } else if (alarm.name === "backfill-continue") {
+    await continueBackfill();
   }
 });
 
@@ -453,12 +455,99 @@ async function scrapeRemainingPages(tabId: number) {
   }
 }
 
+async function continueBackfill() {
+  const { backfillQueue, backfillCursor = 0 } = await chrome.storage.session.get([
+    "backfillQueue",
+    "backfillCursor",
+  ]);
+  if (!backfillQueue || backfillCursor >= backfillQueue.length) {
+    await chrome.storage.session.set({ backfillQueue: null, backfillCursor: null });
+    return;
+  }
+
+  const tab = await chrome.tabs.create({ active: false, url: "about:blank" });
+  if (!tab.id) return;
+
+  const batchEnd = Math.min(backfillCursor + 5, backfillQueue.length);
+
+  try {
+    for (let i = backfillCursor; i < batchEnd; i++) {
+      const postId = backfillQueue[i];
+      const postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${postId}/`;
+
+      await chrome.tabs.update(tab.id, { url: postUrl });
+      await waitForTabLoad(tab.id);
+      await randomDelay(BACKFILL_PACING_MIN_MS, BACKFILL_PACING_MAX_MS);
+
+      // Click "see more" if present
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const btn = document.querySelector(
+              ".feed-shared-inline-show-more-text__see-more-less-toggle"
+            ) as HTMLElement | null;
+            if (btn) btn.click();
+          },
+        });
+        await new Promise((r) => setTimeout(r, 1500));
+      } catch {}
+
+      const result = await sendScrapeCommand(tab.id);
+      if (result.type === "post-content") {
+        try {
+          await postToServer({
+            posts: [{
+              id: postId,
+              full_text: result.data.full_text,
+              hook_text: result.data.hook_text,
+              image_urls: result.data.image_urls,
+            }],
+          });
+        } catch (err: any) {
+          console.error(`[LinkedIn Analytics] Backfill send failed for ${postId}:`, err.message);
+        }
+      }
+    }
+
+    await chrome.storage.session.set({ backfillCursor: batchEnd });
+
+    if (batchEnd < backfillQueue.length) {
+      chrome.alarms.create("backfill-continue", { delayInMinutes: 0.1 });
+    } else {
+      await chrome.storage.session.set({ backfillQueue: null, backfillCursor: null });
+    }
+  } catch (err: any) {
+    console.error("[LinkedIn Analytics] Backfill error:", err.message);
+    await chrome.storage.session.set({ backfillQueue: null, backfillCursor: null });
+  } finally {
+    try { await chrome.tabs.remove(tab.id); } catch {}
+  }
+}
+
 async function finishSync() {
   const { syncTabId } = await chrome.storage.session.get("syncTabId");
   if (syncTabId) {
     try {
       await chrome.tabs.remove(syncTabId);
     } catch {}
+  }
+
+  // Check for posts needing content backfill
+  try {
+    const needsContentRes = await fetch(`${SERVER_URL}/api/posts/needs-content`);
+    if (needsContentRes.ok) {
+      const { post_ids } = await needsContentRes.json();
+      if (post_ids.length > 0) {
+        await chrome.storage.session.set({
+          backfillQueue: post_ids,
+          backfillCursor: 0,
+        });
+        chrome.alarms.create("backfill-continue", { delayInMinutes: 0.1 });
+      }
+    }
+  } catch {
+    // Non-fatal — backfill will happen next sync
   }
 
   await chrome.storage.local.set({ lastSyncAt: Date.now() });
