@@ -41,6 +41,12 @@ export const scrapedSearchAppearancesSchema = z.object({
   search_appearances: z.number().int().nullable(),
 });
 
+export const scrapedPostContentSchema = z.object({
+  hook_text: z.string().nullable(),
+  full_text: z.string().nullable(),
+  image_urls: z.array(z.string()),
+});
+
 // --- TypeScript interfaces (inferred from schemas) ---
 
 export type ScrapedPost = z.infer<typeof scrapedPostSchema>;
@@ -48,6 +54,7 @@ export type ScrapedPostMetrics = z.infer<typeof scrapedPostMetricsSchema>;
 export type ScrapedAudience = z.infer<typeof scrapedAudienceSchema>;
 export type ScrapedProfileViews = z.infer<typeof scrapedProfileViewsSchema>;
 export type ScrapedSearchAppearances = z.infer<typeof scrapedSearchAppearancesSchema>;
+export type ScrapedPostContent = z.infer<typeof scrapedPostContentSchema>;
 
 // --- Messages from content script to service worker ---
 
@@ -57,6 +64,7 @@ export type ContentMessage =
   | { type: "audience"; data: ScrapedAudience }
   | { type: "profile-views"; data: ScrapedProfileViews }
   | { type: "search-appearances"; data: ScrapedSearchAppearances }
+  | { type: "post-content"; data: ScrapedPostContent }
   | { type: "scrape-error"; page: string; error: string };
 
 // --- Commands from service worker to content script ---

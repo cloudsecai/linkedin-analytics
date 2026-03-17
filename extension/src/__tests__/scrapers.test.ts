@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scrapeTopPosts, scrapePostDetail, scrapeAudience, scrapeProfileViews, scrapeSearchAppearances } from "../content/scrapers.js";
+import { scrapeTopPosts, scrapePostDetail, scrapeAudience, scrapeProfileViews, scrapeSearchAppearances, scrapePostPage } from "../content/scrapers.js";
 import { scrapedPostSchema, scrapedPostMetricsSchema, scrapedAudienceSchema, scrapedProfileViewsSchema, scrapedSearchAppearancesSchema } from "../shared/types.js";
 import { z } from "zod";
 
@@ -219,6 +219,69 @@ describe("scrapeSearchAppearances", () => {
     const result = scrapeSearchAppearances(doc);
     expect(result.all_appearances).toBe(8042);
     expect(result.search_appearances).toBe(300);
+  });
+});
+
+describe("scrapePostPage", () => {
+  it("extracts hook_text from truncated view", () => {
+    const doc = createDoc(`
+      <div class="feed-shared-update-v2">
+        <div class="feed-shared-inline-show-more-text">
+          <span class="break-words">
+            <span dir="ltr">This is the hook text that appears before see more</span>
+          </span>
+          <button class="feed-shared-inline-show-more-text__see-more-less-toggle">...see more</button>
+        </div>
+      </div>
+    `);
+    const result = scrapePostPage(doc);
+    expect(result.hook_text).toBe("This is the hook text that appears before see more");
+    expect(result.image_urls).toEqual([]);
+  });
+
+  it("extracts image URLs from post media container", () => {
+    const doc = createDoc(`
+      <div class="feed-shared-update-v2">
+        <div class="feed-shared-inline-show-more-text">
+          <span class="break-words"><span dir="ltr">Post text</span></span>
+        </div>
+        <div class="feed-shared-image">
+          <img src="https://media.licdn.com/dms/image/v2/test1.jpg" />
+        </div>
+      </div>
+    `);
+    const result = scrapePostPage(doc);
+    expect(result.image_urls).toEqual(["https://media.licdn.com/dms/image/v2/test1.jpg"]);
+  });
+
+  it("extracts multiple image URLs from carousel", () => {
+    const doc = createDoc(`
+      <div class="feed-shared-update-v2">
+        <div class="feed-shared-inline-show-more-text">
+          <span class="break-words"><span dir="ltr">Carousel post</span></span>
+        </div>
+        <div class="feed-shared-carousel">
+          <img src="https://media.licdn.com/dms/image/v2/slide1.jpg" />
+          <img src="https://media.licdn.com/dms/image/v2/slide2.jpg" />
+          <img src="https://media.licdn.com/dms/image/v2/slide3.jpg" />
+        </div>
+      </div>
+    `);
+    const result = scrapePostPage(doc);
+    expect(result.image_urls).toHaveLength(3);
+  });
+
+  it("returns empty arrays for text-only posts", () => {
+    const doc = createDoc(`
+      <div class="feed-shared-update-v2">
+        <div class="feed-shared-inline-show-more-text">
+          <span class="break-words"><span dir="ltr">Just text, no images</span></span>
+        </div>
+      </div>
+    `);
+    const result = scrapePostPage(doc);
+    expect(result.hook_text).toBe("Just text, no images");
+    expect(result.image_urls).toEqual([]);
   });
 });
 

@@ -8,6 +8,7 @@ import {
 import type {
   ScrapedPost,
   ScrapedPostMetrics,
+  ScrapedPostContent,
   ScrapedAudience,
   ScrapedProfileViews,
   ScrapedSearchAppearances,
@@ -52,16 +53,20 @@ export function scrapeTopPosts(doc: Document): ScrapedPost[] {
     const activityId = extractActivityId(href);
     if (!activityId) continue;
 
-    // Content preview from aria-label (may be on <a> or <span> in the post item)
+    // Content preview: try aria-label first, fall back to inline text body
     const ariaEl = item.querySelector("[aria-label]");
     const ariaLabel = ariaEl?.getAttribute("aria-label") ?? null;
-    // Filter out generic labels like "Image", "posted this"
-    const contentPreview =
+    const ariaPreview =
       ariaLabel &&
       ariaLabel !== "Image" &&
       !ariaLabel.includes("posted this")
         ? ariaLabel
         : null;
+    // Fallback: the inline text body (works for video/image posts where aria-label is generic)
+    const inlineText = item
+      .querySelector(".inline-show-more-text span")
+      ?.textContent?.trim() ?? null;
+    const contentPreview = ariaPreview || inlineText;
 
     // Content type detection
     const contentType = detectContentType(item);
@@ -172,6 +177,40 @@ export function scrapePostDetail(doc: Document): ScrapedPostMetrics {
   }
 
   return result;
+}
+
+/**
+ * Scrape a post page for hook text, full text, and image URLs.
+ */
+export function scrapePostPage(doc: Document): ScrapedPostContent {
+  // Extract hook text — the visible text before "see more"
+  let hookText: string | null = null;
+  let fullText: string | null = null;
+
+  const textContainer = doc.querySelector(".feed-shared-inline-show-more-text");
+  if (textContainer) {
+    const textSpan = textContainer.querySelector(".break-words");
+    if (textSpan) {
+      hookText = textSpan.textContent?.trim() || null;
+    }
+    fullText = hookText; // Will be updated after "see more" click by service worker
+  }
+
+  // Extract image URLs — look for LinkedIn CDN images in the post
+  const imageUrls: string[] = [];
+  const images = doc.querySelectorAll(
+    '.feed-shared-image img[src*="media.licdn.com"], ' +
+    '.feed-shared-carousel img[src*="media.licdn.com"], ' +
+    '.feed-shared-document img[src*="media.licdn.com"]'
+  );
+  for (const img of images) {
+    const src = img.getAttribute("src");
+    if (src && src.includes("media.licdn.com")) {
+      imageUrls.push(src);
+    }
+  }
+
+  return { hook_text: hookText, full_text: fullText, image_urls: imageUrls };
 }
 
 /**
