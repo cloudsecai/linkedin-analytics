@@ -256,23 +256,22 @@ export function buildApp(dbPath: string) {
       )
       .all() as any[];
 
-    const announcementKeywords = [
-      "excited to announce",
-      "thrilled to announce",
-      "proud to announce",
-      "happy to share that",
-      "excited to share",
-      "i'm joining",
-      "we're launching",
-      "pleased to announce",
-      "grateful this",
-      "had a great time at",
-      "had a great time yesterday",
+    const announcementPatterns = [
+      /excited to\b.*\bannounce/,
+      /thrilled to\b.*\bannounce/,
+      /proud to\b.*\bannounce/,
+      /pleased to\b.*\bannounce/,
+      /happy to share that/,
+      /excited to\b.*\bshare/,
+      /i'm joining/,
+      /we're launching/,
+      /grateful this/,
+      /had a great time (at|yesterday)/,
     ];
 
     const filtered = rows.filter((row) => {
       const text = row.full_text.toLowerCase();
-      return !announcementKeywords.some((kw) => text.includes(kw));
+      return !announcementPatterns.some((re) => re.test(text));
     });
 
     return { posts: filtered.slice(0, limit) };
