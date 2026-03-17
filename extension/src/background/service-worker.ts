@@ -103,9 +103,13 @@ async function drainOfflineQueue() {
 // --- Sync orchestration ---
 
 async function trySync(manual = false) {
-  // Check if already syncing
-  const { syncInProgress } = await chrome.storage.session.get("syncInProgress");
+  // Check if already syncing or backfilling
+  const { syncInProgress, backfillQueue } = await chrome.storage.session.get([
+    "syncInProgress",
+    "backfillQueue",
+  ]);
   if (syncInProgress) return;
+  if (backfillQueue) return; // Backfill still running, skip sync
 
   if (!manual) {
     // Check if sync needed
@@ -303,6 +307,83 @@ async function processBatch(
   }
 }
 
+/**
+ * Two-phase scrape: captures hook_text before expansion, full_text after.
+ * Used by both sync-time scraping and backfill.
+ */
+async function scrapeAndSendPostContent(
+  tabId: number,
+  postId: string,
+): Promise<void> {
+  const postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${postId}/`;
+  await chrome.tabs.update(tabId, { url: postUrl });
+  await waitForTabLoad(tabId);
+
+  // Phase 1: Scrape BEFORE "see more" click — captures hook_text (truncated view)
+  const hookResult = await sendScrapeCommand(tabId);
+  let hookText: string | null = null;
+  let imageUrls: string[] = [];
+
+  if (hookResult.type === "post-content") {
+    hookText = hookResult.data.hook_text;
+    imageUrls = hookResult.data.image_urls;
+  }
+
+  // Phase 2: Click "see more" if present, then re-scrape for full_text
+  let fullText: string | null = hookText; // default to hook if no expansion
+  try {
+    const [clickResult] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const seeMore = document.querySelector(
+          ".feed-shared-inline-show-more-text__see-more-less-toggle"
+        ) as HTMLElement | null;
+        if (seeMore) {
+          seeMore.click();
+          return true;
+        }
+        return false;
+      },
+    });
+
+    if (clickResult?.result) {
+      // Poll for text expansion (up to 3s) instead of fixed wait
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () =>
+          new Promise<void>((resolve) => {
+            const start = Date.now();
+            const check = () => {
+              const btn = document.querySelector(
+                ".feed-shared-inline-show-more-text__see-more-less-toggle"
+              );
+              if (!btn || Date.now() - start > 3000) resolve();
+              else setTimeout(check, 200);
+            };
+            check();
+          }),
+      });
+      const fullResult = await sendScrapeCommand(tabId);
+      if (fullResult.type === "post-content") {
+        fullText = fullResult.data.full_text;
+      }
+    }
+  } catch {
+    // No see more button or script injection failed — continue with hook as full
+  }
+
+  await postToServer({
+    posts: [
+      {
+        id: postId,
+        full_text: fullText,
+        hook_text: hookText,
+        image_urls: imageUrls,
+      },
+    ],
+  });
+}
+
 async function scrapePostPages(
   tabId: number,
   postIds: string[],
@@ -312,85 +393,14 @@ async function scrapePostPages(
   const pacingMax = isBackfill ? BACKFILL_PACING_MAX_MS : PACING_MAX_MS;
 
   for (const postId of postIds) {
-    const postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${postId}/`;
-
-    await chrome.tabs.update(tabId, { url: postUrl });
-    await waitForTabLoad(tabId);
     await randomDelay(pacingMin, pacingMax);
-
-    // Phase 1: Scrape BEFORE "see more" click — captures hook_text (truncated view)
-    const hookResult = await sendScrapeCommand(tabId);
-    let hookText: string | null = null;
-    let imageUrls: string[] = [];
-
-    if (hookResult.type === "post-content") {
-      hookText = hookResult.data.hook_text;
-      imageUrls = hookResult.data.image_urls;
-    }
-
-    // Phase 2: Click "see more" if present, then re-scrape for full_text
-    let fullText: string | null = hookText; // default to hook if no expansion
     try {
-      const [clickResult] = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: () => {
-          const seeMore = document.querySelector(
-            ".feed-shared-inline-show-more-text__see-more-less-toggle"
-          ) as HTMLElement | null;
-          if (seeMore) {
-            seeMore.click();
-            return true;
-          }
-          return false;
-        },
-      });
-
-      if (clickResult?.result) {
-        // Poll for text expansion (up to 3s) instead of fixed wait
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          func: () =>
-            new Promise<void>((resolve) => {
-              const start = Date.now();
-              const check = () => {
-                const btn = document.querySelector(
-                  ".feed-shared-inline-show-more-text__see-more-less-toggle"
-                );
-                // Button removed or text changed = expansion complete
-                if (!btn || Date.now() - start > 3000) resolve();
-                else setTimeout(check, 200);
-              };
-              check();
-            }),
-        });
-        // Re-scrape to get full expanded text
-        const fullResult = await sendScrapeCommand(tabId);
-        if (fullResult.type === "post-content") {
-          fullText = fullResult.data.full_text;
-        }
-      }
-    } catch {
-      // No see more button or script injection failed — continue with hook as full
-    }
-
-    // POST content to server as a partial post update
-    try {
-      await postToServer({
-        posts: [
-          {
-            id: postId,
-            full_text: fullText,
-            hook_text: hookText,
-            image_urls: imageUrls,
-          },
-        ],
-      });
+      await scrapeAndSendPostContent(tabId, postId);
     } catch (err: any) {
       console.error(
         `[LinkedIn Analytics] Failed to send content for ${postId}:`,
         err.message
       );
-      // Continue with remaining posts — don't abort the loop
     }
   }
 }
@@ -473,40 +483,11 @@ async function continueBackfill() {
   try {
     for (let i = backfillCursor; i < batchEnd; i++) {
       const postId = backfillQueue[i];
-      const postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${postId}/`;
-
-      await chrome.tabs.update(tab.id, { url: postUrl });
-      await waitForTabLoad(tab.id);
       await randomDelay(BACKFILL_PACING_MIN_MS, BACKFILL_PACING_MAX_MS);
-
-      // Click "see more" if present
       try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          func: () => {
-            const btn = document.querySelector(
-              ".feed-shared-inline-show-more-text__see-more-less-toggle"
-            ) as HTMLElement | null;
-            if (btn) btn.click();
-          },
-        });
-        await new Promise((r) => setTimeout(r, 1500));
-      } catch {}
-
-      const result = await sendScrapeCommand(tab.id);
-      if (result.type === "post-content") {
-        try {
-          await postToServer({
-            posts: [{
-              id: postId,
-              full_text: result.data.full_text,
-              hook_text: result.data.hook_text,
-              image_urls: result.data.image_urls,
-            }],
-          });
-        } catch (err: any) {
-          console.error(`[LinkedIn Analytics] Backfill send failed for ${postId}:`, err.message);
-        }
+        await scrapeAndSendPostContent(tab.id, postId);
+      } catch (err: any) {
+        console.error(`[LinkedIn Analytics] Backfill failed for ${postId}:`, err.message);
       }
     }
 
