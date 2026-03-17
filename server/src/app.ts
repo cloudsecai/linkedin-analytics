@@ -21,6 +21,7 @@ import {
   queryHealth,
 } from "./db/queries.js";
 import { ingestPayloadSchema } from "./schemas.js";
+import { registerInsightsRoutes } from "./routes/insights.js";
 
 export function buildApp(dbPath: string) {
   const app = Fastify({ logger: false });
@@ -138,6 +139,27 @@ export function buildApp(dbPath: string) {
       error_details: errors.length > 0 ? JSON.stringify(errorDetails) : null,
     });
 
+    // Auto-trigger AI pipeline if conditions met
+    const aiApiKey = process.env.TRUSTMIND_LLM_API_KEY;
+    if (aiApiKey && postsUpserted > 0) {
+      // Dynamic import to avoid issues when AI features are disabled
+      Promise.all([
+        import("./ai/orchestrator.js"),
+        import("./db/ai-queries.js"),
+        import("./ai/client.js"),
+      ]).then(([{ runPipeline }, { getPostCountWithMetrics, getLatestCompletedRun, getRunningRun }, { createClient }]) => {
+        if (getRunningRun(db)) return;
+        const postCount = getPostCountWithMetrics(db);
+        if (postCount < 10) return;
+        const lastRun = getLatestCompletedRun(db);
+        if (lastRun && (postCount - lastRun.post_count) < 3) return;
+        const client = createClient(aiApiKey);
+        runPipeline(client, db, "sync").catch((err: any) => {
+          console.error("[AI Pipeline] Auto-trigger failed:", err.message);
+        });
+      }).catch(() => {});
+    }
+
     return {
       ok: true,
       posts_upserted: postsUpserted,
@@ -197,6 +219,9 @@ export function buildApp(dbPath: string) {
     const snapshots = queryProfile(db);
     return { snapshots };
   });
+
+  // AI Insights routes
+  registerInsightsRoutes(app, db);
 
   // Serve dashboard static files
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
