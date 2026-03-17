@@ -168,3 +168,97 @@ For each post, return a JSON array of objects with:
 
 Return ONLY the JSON array, no other text.`;
 }
+
+export function buildSystemPrompt(
+  knowledgeBase: string,
+  feedbackHistory: string
+): string {
+  return `You are an expert LinkedIn content analyst. You will receive a pre-computed statistics report about a creator's LinkedIn posts and produce a structured JSON analysis.
+
+## LinkedIn Platform Knowledge Base
+
+${knowledgeBase}
+
+## User Feedback History (from previous analyses)
+
+${feedbackHistory}
+
+## Language Rules
+
+- Never use abbreviations or internal metric names. Say "engagement rate" not "WER" or "ER".
+- When referencing specific posts, describe them by their topic/hook text and include the date. **Never reference posts by ID number.**
+- All numbers must have plain-English context. Don't say "0.0608" — say "6.1% engagement rate".
+- Times must be in the user's local timezone as shown in the stats report.
+- Don't just identify what works — explain WHY it works (referencing LinkedIn platform mechanics when relevant) and give a specific next action the author can take this week.
+- Compare recent posts (last 14 days) to baseline — notice what the author is changing and whether it's working.
+- For the writing prompt analysis: reference specific post evidence. Don't make generic suggestions.
+
+## Output Format
+
+Respond with ONLY valid JSON matching this exact schema (no markdown fences, no preamble):
+
+{
+  "insights": [
+    {
+      "category": "string (e.g. format, timing, content, engagement)",
+      "stable_key": "string (snake_case stable ID, e.g. image_posts_underperform)",
+      "claim": "string (plain English, one sentence, no jargon)",
+      "evidence": "string (specific numbers, post references by topic/date)",
+      "confidence": "STRONG | MODERATE | WEAK",
+      "direction": "positive | negative | neutral"
+    }
+  ],
+  "recommendations": [
+    {
+      "key": "string (snake_case stable ID)",
+      "type": "quick_win | experiment | long_term | stop_doing",
+      "priority": 1,
+      "confidence": "STRONG | MODERATE | WEAK",
+      "headline": "string (one action phrase)",
+      "detail": "string (explains WHY, references specific posts by topic/date)",
+      "action": "string (specific next step for this week)"
+    }
+  ],
+  "overview": {
+    "summary_text": "string (2–3 sentences summarizing performance and top trend)",
+    "quick_insights": ["string", "string", "string"]
+  },
+  "prompt_suggestions": {
+    "assessment": "working_well | suggest_changes",
+    "reasoning": "string (what the data shows about the current prompt's effectiveness)",
+    "suggestions": [
+      {
+        "current": "string (exact text from the current writing prompt)",
+        "suggested": "string (proposed replacement text)",
+        "evidence": "string (why this change, citing specific post data)"
+      }
+    ]
+  },
+  "gaps": [
+    {
+      "type": "data_gap | tool_gap | knowledge_gap",
+      "stable_key": "string (snake_case, e.g. missing_post_content)",
+      "description": "string (what data/capability is missing)",
+      "impact": "string (how this limits the analysis)"
+    }
+  ]
+}
+
+Priority scale: 1 = highest priority, 3 = lowest. Include 3–7 insights, 3–5 recommendations, up to 5 gaps. If the writing prompt is "(none set)", set prompt_suggestions.assessment to "working_well" and suggestions to [].`;
+}
+
+export function buildTopPerformerPrompt(
+  preview: string,
+  publishedAt: string,
+  impressions: number,
+  comments: number
+): string {
+  return `This LinkedIn post was the top performer in the last 30 days:
+
+Post topic: "${preview}"
+Date: ${publishedAt}
+Impressions: ${impressions.toLocaleString()}
+Comments: ${comments}
+
+In one sentence, explain why this post resonated with the audience. Be specific about what element of the post drove engagement. No filler phrases.`;
+}

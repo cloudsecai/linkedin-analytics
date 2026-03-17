@@ -113,6 +113,37 @@ export interface Changelog {
   retired: Insight[];
 }
 
+export interface AnalysisGap {
+  id: number;
+  gap_type: string;
+  stable_key: string;
+  description: string;
+  impact: string;
+  times_flagged: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface PromptSuggestion {
+  current: string;
+  suggested: string;
+  evidence: string;
+}
+
+export interface PromptSuggestions {
+  assessment: "working_well" | "suggest_changes";
+  reasoning: string;
+  suggestions: PromptSuggestion[];
+}
+
+export interface WritingPromptHistory {
+  id: number;
+  prompt_text: string;
+  source: string;
+  suggestion_evidence: string | null;
+  created_at: string;
+}
+
 export interface TaxonomyItem {
   id: number;
   name: string;
@@ -180,4 +211,34 @@ export const api = {
     }).then((r) => r.json()),
   deleteAuthorPhoto: () =>
     fetch(`${BASE_URL}/settings/author-photo`, { method: "DELETE" }).then((r) => r.json()),
+
+  // Timezone
+  setTimezone: (timezone: string) =>
+    fetch(`${BASE_URL}/settings/timezone`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone }),
+    }).then((r) => r.json() as Promise<{ ok: boolean }>),
+
+  // Writing prompt
+  getWritingPrompt: () =>
+    get<{ text: string | null }>("/settings/writing-prompt"),
+
+  saveWritingPrompt: (text: string, source: "manual_edit" | "ai_suggestion", evidence?: string) =>
+    fetch(`${BASE_URL}/settings/writing-prompt`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, source, evidence }),
+    }).then((r) => r.json() as Promise<{ ok: boolean }>),
+
+  getWritingPromptHistory: () =>
+    get<{ history: WritingPromptHistory[] }>("/settings/writing-prompt/history"),
+
+  // Analysis gaps
+  insightsGaps: () =>
+    get<{ gaps: AnalysisGap[] }>("/insights/gaps"),
+
+  // Prompt suggestions
+  insightsPromptSuggestions: () =>
+    get<{ prompt_suggestions: PromptSuggestions | null }>("/insights/prompt-suggestions"),
 };

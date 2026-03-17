@@ -1,11 +1,13 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type Database from "better-sqlite3";
-import BetterSqlite3 from "better-sqlite3";
 import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 import { AiLogger } from "./logger.js";
 import { MODELS } from "./client.js";
-import { runAnalysis } from "./analyzer.js";
-import type { AnalysisResult } from "./analyzer.js";
+import { interpretStats } from "./analyzer.js";
+import { buildStatsReport } from "./stats-report.js";
+import { buildSystemPrompt, buildTopPerformerPrompt } from "./prompts.js";
 import { discoverTaxonomy } from "./taxonomy.js";
 import { tagPosts } from "./tagger.js";
 import { classifyImages } from "./image-classifier.js";
@@ -24,6 +26,9 @@ import {
   insertRecommendation,
   upsertOverview,
   getPostCountWithMetrics,
+  getSetting,
+  upsertAnalysisGap,
+  getRecentFeedbackWithReasons,
 } from "../db/ai-queries.js";
 
 // ── Types ──────────────────────────────────────────────────
@@ -34,6 +39,8 @@ export interface PipelineResult {
   error?: string;
 }
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 // ── Pure functions ─────────────────────────────────────────
 
 export function shouldRunPipeline(
@@ -43,16 +50,13 @@ export function shouldRunPipeline(
   if (currentPostCount < 10) {
     return { should: false, reason: "Need at least 10 posts with metrics" };
   }
-
   if (!lastRun) {
     return { should: true };
   }
-
   const newPosts = currentPostCount - lastRun.post_count;
   if (newPosts < 3) {
     return { should: false, reason: "Fewer than 3 new posts since last analysis" };
   }
-
   return { should: true };
 }
 
@@ -63,109 +67,109 @@ export async function runPipeline(
   db: Database.Database,
   triggeredBy: string
 ): Promise<PipelineResult> {
-  // Check for already running run
   const running = getRunningRun(db);
   if (running) {
-    return {
-      runId: running.id,
-      status: "failed",
-      error: "A pipeline run is already in progress",
-    };
+    return { runId: running.id, status: "failed", error: "A pipeline run is already in progress" };
   }
 
-  // Check if we should run
   const postCount = getPostCountWithMetrics(db);
   const lastRun = getLatestCompletedRun(db);
-  const check = shouldRunPipeline(
-    postCount,
-    lastRun ? { post_count: lastRun.post_count } : null
-  );
+  const check = shouldRunPipeline(postCount, lastRun ? { post_count: lastRun.post_count } : null);
   if (!check.should) {
     return { runId: 0, status: "failed", error: check.reason };
   }
 
-  // Create run
   const runId = createRun(db, triggeredBy, postCount);
   const logger = new AiLogger(db, runId);
 
   try {
-    // Ensure taxonomy exists
+    // Step 1: Taxonomy and tagging (kept from prior architecture)
     const taxonomy = getTaxonomy(db);
     if (taxonomy.length === 0) {
       await discoverTaxonomy(client, db, logger);
     }
-
-    // Tag untagged posts
     const untaggedIds = getUntaggedPostIds(db);
     if (untaggedIds.length > 0) {
       const posts = db
         .prepare(
-          `SELECT id, COALESCE(full_text, content_preview) as content_preview FROM posts WHERE id IN (${untaggedIds.map(() => "?").join(",")})`
+          `SELECT id, COALESCE(full_text, content_preview) as content_preview
+           FROM posts WHERE id IN (${untaggedIds.map(() => "?").join(",")})`
         )
         .all(...untaggedIds) as { id: string; content_preview: string | null }[];
       await tagPosts(client, db, posts, logger);
     }
 
-    // Classify unclassified images
+    // Step 2: Image classification (kept)
     const dataDir = path.dirname(db.name);
     await classifyImages(client, db, dataDir, logger);
 
-    // Open read-only connection for LLM query tool (safety: prevents writes)
-    const queryDb = new BetterSqlite3(db.name, { readonly: true });
-    try {
-    // Run analysis
-    const analysis = await runAnalysis(client, db, queryDb, logger);
+    // Step 3: Build stats report
+    const timezone = getSetting(db, "timezone") ?? "UTC";
+    const writingPrompt = getSetting(db, "writing_prompt");
+    const statsReport = buildStatsReport(db, timezone, writingPrompt);
+
+    // Step 4: Build system prompt (read knowledge base from file)
+    const knowledgePath = path.join(__dirname, "linkedin-knowledge.md");
+    const knowledgeBase = fs.existsSync(knowledgePath)
+      ? fs.readFileSync(knowledgePath, "utf-8")
+      : "(knowledge base not found)";
+
+    const feedbackRows = getRecentFeedbackWithReasons(db);
+    const feedbackHistory =
+      feedbackRows.length > 0
+        ? feedbackRows
+            .map((f) => {
+              const reason = f.reason ? ` because: "${f.reason}"` : "";
+              return `- The user found "${f.headline}" ${
+                f.feedback === "useful" ? "useful" : "not useful"
+              }${reason}`;
+            })
+            .join("\n")
+        : "No feedback history yet.";
+
+    const systemPrompt = buildSystemPrompt(knowledgeBase, feedbackHistory);
+
+    // Step 5: Single Sonnet interpretation call
+    const analysis = await interpretStats(client, statsReport, systemPrompt, logger);
 
     if (analysis) {
-      // Process insights with lineage
+      // Store insights with lineage
       const activeInsights = getActiveInsights(db);
       const activeByKey = new Map(
-        activeInsights.map((i: { id: number; stable_key: string; first_seen_run_id: number; consecutive_appearances: number }) => [
-          i.stable_key,
-          i,
-        ])
+        activeInsights.map((i: any) => [i.stable_key, i])
       );
-
       const matchedKeys = new Set<string>();
 
       for (const insight of analysis.insights) {
-        const existing = activeByKey.get(insight.stable_key) as
-          | { id: number; first_seen_run_id: number; consecutive_appearances: number }
-          | undefined;
-
+        const existing = activeByKey.get(insight.stable_key) as any;
         const newInsightId = insertInsight(db, {
           run_id: runId,
           category: insight.category,
           stable_key: insight.stable_key,
           claim: insight.claim,
           evidence: insight.evidence,
-          confidence: typeof insight.confidence === "string"
-            ? parseFloat(insight.confidence) || 0.5
-            : (insight.confidence as unknown as number),
+          confidence: insight.confidence,
           direction: insight.direction,
           first_seen_run_id: existing ? existing.first_seen_run_id : runId,
-          consecutive_appearances: existing
-            ? existing.consecutive_appearances + 1
-            : 1,
+          consecutive_appearances: existing ? existing.consecutive_appearances + 1 : 1,
         });
-
         if (existing) {
           matchedKeys.add(insight.stable_key);
           insertInsightLineage(
             db,
             newInsightId,
             existing.id,
-            insight.direction === "reversed" ? "reversal" : "continuation"
+            existing.direction !== insight.direction &&
+              ["positive", "negative"].includes(existing.direction) &&
+              ["positive", "negative"].includes(insight.direction)
+              ? "reversal"
+              : "continuation"
           );
           retireInsight(db, existing.id);
         }
       }
-
-      // Retire unmatched active insights
       for (const [key, insight] of activeByKey) {
-        if (!matchedKeys.has(key)) {
-          retireInsight(db, (insight as { id: number }).id);
-        }
+        if (!matchedKeys.has(key)) retireInsight(db, (insight as any).id);
       }
 
       // Store recommendations
@@ -173,12 +177,8 @@ export async function runPipeline(
         insertRecommendation(db, {
           run_id: runId,
           type: rec.type,
-          priority: typeof rec.priority === "string"
-            ? (rec.priority === "high" ? 1 : rec.priority === "med" ? 2 : 3)
-            : (rec.priority as unknown as number),
-          confidence: typeof rec.confidence === "string"
-            ? (rec.confidence === "strong" ? 0.9 : rec.confidence === "mod" ? 0.7 : 0.5)
-            : (rec.confidence as unknown as number),
+          priority: rec.priority,
+          confidence: rec.confidence,
           headline: rec.headline,
           detail: rec.detail,
           action: rec.action,
@@ -186,18 +186,33 @@ export async function runPipeline(
         });
       }
 
-      // Generate overview — find top performer
+      // Store gaps
+      for (const gap of analysis.gaps ?? []) {
+        upsertAnalysisGap(db, {
+          run_id: runId,
+          gap_type: gap.type,
+          stable_key: gap.stable_key,
+          description: gap.description,
+          impact: gap.impact,
+        });
+      }
+
+      // Step 6: Determine top performer deterministically (highest ER in last 30 days)
       const topPerformer = db
         .prepare(
-          `SELECT p.id, COALESCE(p.hook_text, SUBSTR(p.full_text, 1, 100), p.content_preview) as preview,
+          `SELECT p.id,
+                  COALESCE(p.hook_text, SUBSTR(p.full_text, 1, 100), p.content_preview) as preview,
                   p.published_at, p.url,
                   pm.impressions, pm.reactions, pm.comments, pm.reposts,
-                  (COALESCE(pm.comments,0)*5 + COALESCE(pm.reposts,0)*3 + COALESCE(pm.saves,0)*3 + COALESCE(pm.sends,0)*3 + COALESCE(pm.reactions,0)*1) as weighted_score
+                  CAST((COALESCE(pm.reactions,0) + COALESCE(pm.comments,0) + COALESCE(pm.reposts,0)) AS REAL)
+                    / NULLIF(pm.impressions, 0) * 100 as er
            FROM posts p
            JOIN post_metrics pm ON pm.post_id = p.id
-           JOIN (SELECT post_id, MAX(id) as max_id FROM post_metrics GROUP BY post_id) latest ON pm.id = latest.max_id
+           JOIN (SELECT post_id, MAX(id) as max_id FROM post_metrics GROUP BY post_id) latest
+             ON pm.id = latest.max_id
            WHERE p.published_at >= datetime('now', '-30 days')
-           ORDER BY weighted_score DESC LIMIT 1`
+             AND pm.impressions > 0
+           ORDER BY er DESC LIMIT 1`
         )
         .get() as
         | {
@@ -209,39 +224,39 @@ export async function runPipeline(
             reactions: number;
             comments: number;
             reposts: number;
-            weighted_score: number;
+            er: number;
           }
         | undefined;
 
+      // Step 7: Haiku call for top performer reason
       let topPerformerReason: string | null = null;
       if (topPerformer) {
         try {
           const reasonResponse = await client.messages.create({
             model: MODELS.HAIKU,
-            max_tokens: 200,
-            system: "You write concise, plain-language explanations of why LinkedIn posts performed well. One sentence max.",
+            max_tokens: 150,
+            system:
+              "You write concise, plain-language explanations of why LinkedIn posts performed well. One sentence max. No filler phrases.",
             messages: [
               {
                 role: "user",
-                content: `This LinkedIn post was the top performer in the last 30 days:
-Post topic: "${topPerformer.preview ?? "Unknown"}"
-Date: ${new Date(topPerformer.published_at).toLocaleDateString()}
-Impressions: ${topPerformer.impressions?.toLocaleString() ?? 0}
-Comments: ${topPerformer.comments ?? 0}
-Reactions: ${topPerformer.reactions ?? 0}
-
-In one sentence, explain why this post resonated with the audience.`,
+                content: buildTopPerformerPrompt(
+                  topPerformer.preview ?? "Unknown post",
+                  new Date(topPerformer.published_at).toLocaleDateString(),
+                  topPerformer.impressions,
+                  topPerformer.comments
+                ),
               },
             ],
           });
-          const reasonText = reasonResponse.content
-            .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
-            .map((b) => b.text)
+          const reasonText = (reasonResponse.content as any[])
+            .filter((b) => b.type === "text")
+            .map((b) => (b as any).text)
             .join("");
           logger.log({
             step: "top_performer_reason",
             model: MODELS.HAIKU,
-            input_messages: JSON.stringify([{ role: "user", content: `[top performer reason for ${topPerformer.id}]` }]),
+            input_messages: JSON.stringify([{ role: "user", content: "[top performer prompt]" }]),
             output_text: reasonText,
             tool_calls: null,
             input_tokens: reasonResponse.usage.input_tokens,
@@ -249,30 +264,34 @@ In one sentence, explain why this post resonated with the audience.`,
             thinking_tokens: 0,
             duration_ms: 0,
           });
-          topPerformerReason = `"${topPerformer.preview ?? "Post"}" (${new Date(topPerformer.published_at).toLocaleDateString()}) — ${reasonText}`;
+          topPerformerReason = `"${topPerformer.preview ?? "Post"}" (${new Date(
+            topPerformer.published_at
+          ).toLocaleDateString()}) — ${reasonText}`;
         } catch {
-          // Fallback to template if LLM call fails
-          topPerformerReason = `"${topPerformer.preview ?? "Post"}" (${new Date(topPerformer.published_at).toLocaleDateString()}) — ${topPerformer.impressions?.toLocaleString() ?? 0} impressions, ${topPerformer.comments ?? 0} comments, ${topPerformer.reactions ?? 0} reactions`;
+          topPerformerReason = `"${topPerformer.preview ?? "Post"}" (${new Date(
+            topPerformer.published_at
+          ).toLocaleDateString()}) — ${topPerformer.impressions?.toLocaleString() ?? 0} impressions`;
         }
       }
 
+      // Step 8: Store overview
       upsertOverview(db, {
         run_id: runId,
-        summary_text: analysis.summary,
+        summary_text: analysis.overview.summary_text,
         top_performer_post_id: topPerformer?.id ?? null,
         top_performer_reason: topPerformerReason,
-        quick_insights: JSON.stringify(
-          analysis.insights.slice(0, 5).map((i) => i.claim)
-        ),
+        quick_insights: JSON.stringify(analysis.overview.quick_insights),
+        prompt_suggestions_json: analysis.prompt_suggestions
+          ? JSON.stringify(analysis.prompt_suggestions)
+          : null,
       });
     }
 
     // Sum tokens from ai_logs for this run
     const tokenSums = db
       .prepare(
-        `SELECT
-           COALESCE(SUM(input_tokens), 0) as input_tokens,
-           COALESCE(SUM(output_tokens), 0) as output_tokens
+        `SELECT COALESCE(SUM(input_tokens), 0) as input_tokens,
+                COALESCE(SUM(output_tokens), 0) as output_tokens
          FROM ai_logs WHERE run_id = ?`
       )
       .get(runId) as { input_tokens: number; output_tokens: number };
@@ -280,13 +299,10 @@ In one sentence, explain why this post resonated with the audience.`,
     completeRun(db, runId, {
       input_tokens: tokenSums.input_tokens,
       output_tokens: tokenSums.output_tokens,
-      cost_cents: 0, // Cost calculation can be added later
+      cost_cents: 0,
     });
 
     return { runId, status: "completed" };
-    } finally {
-      queryDb.close();
-    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     failRun(db, runId, message);
