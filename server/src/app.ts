@@ -58,7 +58,7 @@ export function buildApp(dbPath: string) {
     if (!parseResult.success) {
       return reply.status(400).send({
         ok: false,
-        error: parseResult.error.issues.map((i) => i.message).join(", "),
+        error: parseResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", "),
       });
     }
 
