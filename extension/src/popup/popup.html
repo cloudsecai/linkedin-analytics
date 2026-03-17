@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 12px;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      font-size: 13px;
+      border-bottom: 1px solid #2a2a4a;
+    }
+    .status-row:last-child { border-bottom: none; }
+    .status-label { color: #a0a0b8; }
+    .status-value { font-weight: 500; }
+    .status-ok { color: #4ade80; }
+    .status-error { color: #f87171; }
+    .status-pending { color: #a0a0b8; }
+    .sync-info {
+      margin-bottom: 12px;
+      padding: 8px 10px;
+      background: #16213e;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #a0a0b8;
+    }
+    .sync-info .time { color: #e0e0e0; font-weight: 500; }
+    .sources { margin-bottom: 12px; }
+    .sources h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #6b6b8a;
+      margin-bottom: 6px;
+    }
+    .alert {
+      padding: 6px 10px;
+      background: #3b1c1c;
+      border: 1px solid #7f1d1d;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #fca5a5;
+      margin-bottom: 12px;
+      display: none;
+    }
+    .buttons {
+      display: flex;
+      gap: 8px;
+    }
+    button {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #sync-btn {
+      background: #0a66c2;
+      color: #fff;
+    }
+    #dashboard-btn {
+      background: #2a2a4a;
+      color: #e0e0e0;
+    }
+  </style>
+</head>
+<body>
+  <h1>LinkedIn Analytics</h1>
+
+  <div id="alert" class="alert"></div>
+
+  <div class="sync-info">
+    Last sync: <span id="last-sync" class="time">Never</span>
+  </div>
+
+  <div class="sources">
+    <h2>Data Sources</h2>
+    <div class="status-row">
+      <span class="status-label">Posts</span>
+      <span id="posts-status" class="status-value status-pending">--</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Followers</span>
+      <span id="followers-status" class="status-value status-pending">--</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Profile</span>
+      <span id="profile-status" class="status-value status-pending">--</span>
+    </div>
+  </div>
+
+  <div class="buttons">
+    <button id="sync-btn">Sync Now</button>
+    <button id="dashboard-btn">Open Dashboard</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

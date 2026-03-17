@@ -1,6 +1,6 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
-import { copyFileSync } from "fs";
+import { copyFileSync, mkdirSync } from "fs";
 
 export default defineConfig({
   build: {
@@ -13,6 +13,7 @@ export default defineConfig({
           "src/background/service-worker.ts"
         ),
         "content/index": resolve(__dirname, "src/content/index.ts"),
+        "popup/popup": resolve(__dirname, "src/popup/popup.ts"),
       },
       output: {
         entryFileNames: "[name].js",
@@ -25,11 +26,16 @@ export default defineConfig({
   },
   plugins: [
     {
-      name: "copy-manifest",
+      name: "copy-extension-files",
       closeBundle() {
         copyFileSync(
           resolve(__dirname, "manifest.json"),
           resolve(__dirname, "dist/manifest.json")
+        );
+        mkdirSync(resolve(__dirname, "dist/popup"), { recursive: true });
+        copyFileSync(
+          resolve(__dirname, "src/popup/popup.html"),
+          resolve(__dirname, "dist/popup/popup.html")
         );
       },
     },
