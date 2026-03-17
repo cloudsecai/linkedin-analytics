@@ -517,6 +517,49 @@ describe("GET /api/profile", () => {
   });
 });
 
+describe("GET /api/posts/needs-content", () => {
+  it("returns post IDs missing full_text", async () => {
+    // Insert a post without full_text
+    await app.inject({
+      method: "POST",
+      url: "/api/ingest",
+      payload: {
+        posts: [
+          {
+            id: "needs-content-1",
+            content_type: "text",
+            published_at: "2025-01-15T10:00:00+00:00",
+          },
+        ],
+      },
+    });
+    // Insert a post WITH full_text
+    await app.inject({
+      method: "POST",
+      url: "/api/ingest",
+      payload: {
+        posts: [
+          {
+            id: "needs-content-2",
+            content_type: "text",
+            published_at: "2025-01-15T10:00:00+00:00",
+            full_text: "Already has content",
+          },
+        ],
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/posts/needs-content",
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.post_ids).toContain("needs-content-1");
+    expect(body.post_ids).not.toContain("needs-content-2");
+  });
+});
+
 describe("CORS", () => {
   it("allows chrome-extension:// origins", async () => {
     const res = await app.inject({

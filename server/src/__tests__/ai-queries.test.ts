@@ -28,6 +28,9 @@ import {
   getChangelog,
   getPostCountWithMetrics,
   getPostCountSinceRun,
+  upsertImageTag,
+  getImageTags,
+  getUnclassifiedImagePosts,
 } from "../db/ai-queries.js";
 import fs from "fs";
 import path from "path";
@@ -310,6 +313,55 @@ describe("AI queries", () => {
         model: "m",
       });
       expect(getUntaggedPostIds(db)).toEqual([]);
+    });
+  });
+
+  // ── ai_image_tags ──────────────────────────────────────────
+
+  describe("ai_image_tags", () => {
+    it("upsertImageTag inserts and retrieves image tags", () => {
+      db.prepare("INSERT INTO posts (id, content_type) VALUES ('img-test-1', 'image')").run();
+
+      upsertImageTag(db, {
+        post_id: "img-test-1",
+        image_index: 0,
+        format: "photo",
+        people: "author-solo",
+        setting: "casual-or-personal",
+        text_density: "no-text",
+        energy: "raw",
+        model: "haiku",
+      });
+
+      const tags = getImageTags(db, ["img-test-1"]);
+      expect(tags["img-test-1"]).toHaveLength(1);
+      expect(tags["img-test-1"][0].format).toBe("photo");
+      expect(tags["img-test-1"][0].people).toBe("author-solo");
+    });
+
+    it("getUnclassifiedImagePosts returns posts with images but no tags", () => {
+      db.prepare(
+        "INSERT INTO posts (id, content_type, image_local_paths) VALUES ('unclass-1', 'image', '[\"data/images/unclass-1/0.jpg\"]')"
+      ).run();
+      db.prepare(
+        "INSERT INTO posts (id, content_type, image_local_paths) VALUES ('unclass-2', 'image', '[\"data/images/unclass-2/0.jpg\"]')"
+      ).run();
+      // Tag one of them
+      upsertImageTag(db, {
+        post_id: "unclass-2",
+        image_index: 0,
+        format: "photo",
+        people: "no-people",
+        setting: "digital-only",
+        text_density: "no-text",
+        energy: "polished",
+        model: "haiku",
+      });
+
+      const unclassified = getUnclassifiedImagePosts(db);
+      const ids = unclassified.map((p) => p.id);
+      expect(ids).toContain("unclass-1");
+      expect(ids).not.toContain("unclass-2");
     });
   });
 

@@ -55,6 +55,29 @@ export interface AiLogInput {
   duration_ms: number;
 }
 
+export interface ImageTagInput {
+  post_id: string;
+  image_index: number;
+  format: string;
+  people: string;
+  setting: string;
+  text_density: string;
+  energy: string;
+  model: string;
+}
+
+export interface ImageTag {
+  post_id: string;
+  image_index: number;
+  format: string;
+  people: string;
+  setting: string;
+  text_density: string;
+  energy: string;
+  tagged_at: string;
+  model: string;
+}
+
 // ── ai_runs ────────────────────────────────────────────────
 
 export function createRun(
@@ -422,6 +445,52 @@ export function getPostCountWithMetrics(db: Database.Database): number {
     )
     .get() as { count: number };
   return row.count;
+}
+
+// ── ai_image_tags ─────────────────────────────────────────
+
+export function upsertImageTag(db: Database.Database, input: ImageTagInput): void {
+  db.prepare(
+    `INSERT INTO ai_image_tags (post_id, image_index, format, people, setting, text_density, energy, model)
+     VALUES (@post_id, @image_index, @format, @people, @setting, @text_density, @energy, @model)
+     ON CONFLICT(post_id, image_index) DO UPDATE SET
+       format = @format, people = @people, setting = @setting,
+       text_density = @text_density, energy = @energy,
+       model = @model, tagged_at = CURRENT_TIMESTAMP`
+  ).run(input);
+}
+
+export function getImageTags(
+  db: Database.Database,
+  postIds: string[]
+): Record<string, ImageTag[]> {
+  if (postIds.length === 0) return {};
+  const placeholders = postIds.map(() => "?").join(",");
+  const rows = db
+    .prepare(
+      `SELECT * FROM ai_image_tags WHERE post_id IN (${placeholders}) ORDER BY post_id, image_index`
+    )
+    .all(...postIds) as ImageTag[];
+  const result: Record<string, ImageTag[]> = {};
+  for (const row of rows) {
+    if (!result[row.post_id]) result[row.post_id] = [];
+    result[row.post_id].push(row);
+  }
+  return result;
+}
+
+export function getUnclassifiedImagePosts(
+  db: Database.Database
+): { id: string; image_local_paths: string; hook_text: string | null }[] {
+  return db
+    .prepare(
+      `SELECT p.id, p.image_local_paths, p.hook_text
+       FROM posts p
+       WHERE p.image_local_paths IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM ai_image_tags t WHERE t.post_id = p.id)
+       ORDER BY p.published_at DESC`
+    )
+    .all() as { id: string; image_local_paths: string; hook_text: string | null }[];
 }
 
 export function getPostCountSinceRun(

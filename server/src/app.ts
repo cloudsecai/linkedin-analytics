@@ -168,6 +168,14 @@ export function buildApp(dbPath: string) {
     };
   });
 
+  // Posts needing content scraping
+  app.get("/api/posts/needs-content", async () => {
+    const rows = db
+      .prepare("SELECT id FROM posts WHERE full_text IS NULL ORDER BY published_at DESC")
+      .all() as { id: string }[];
+    return { post_ids: rows.map((r) => r.id) };
+  });
+
   // Posts
   app.get("/api/posts", async (request) => {
     const q = request.query as any;

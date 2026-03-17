@@ -9,6 +9,7 @@ const ALLOWED_TABLES = new Set([
   "ai_tags",
   "ai_post_topics",
   "ai_taxonomy",
+  "ai_image_tags",
 ]);
 
 // ── Tool definitions ────────────────────────────────────────
@@ -19,7 +20,7 @@ export function createQueryDbTool(): Anthropic.Messages.Tool {
     description:
       "Run a read-only SQL query against the LinkedIn analytics database. " +
       "Allowed tables: posts, post_metrics, follower_snapshots, profile_snapshots, " +
-      "ai_tags, ai_post_topics, ai_taxonomy. Only SELECT statements are permitted. " +
+      "ai_tags, ai_post_topics, ai_taxonomy, ai_image_tags. Only SELECT statements are permitted. " +
       "Results are returned as a markdown table (max 100 rows).",
     input_schema: {
       type: "object" as const,
