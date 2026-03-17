@@ -2,21 +2,15 @@
 
 Repo: https://github.com/cloudsecai/linkedin-analytics (private)
 
-## Phase 0: Voyager API Discovery Spike (MANUAL — do before giving to agent)
+## Phase 0: Discovery Spike (COMPLETE)
 
-This must be done by a human in a real browser:
+Done manually via Chrome DevTools on a live LinkedIn session. Findings in `docs/voyager-endpoints.md`.
 
-1. Open Chrome DevTools Network tab, navigate to your LinkedIn analytics pages
-2. Filter for `/voyager/api/` requests
-3. Document endpoints, params, and response shapes for: post listing, post metrics, follower count, profile views
-4. Save findings to `docs/voyager-endpoints.md` in the repo
-5. Create initial Zod schemas from actual response shapes
-
-**This blocks everything else.** The agent cannot discover these endpoints — they require a real authenticated LinkedIn session.
+**Key discovery:** LinkedIn analytics data is server-side rendered into HTML. Collection strategy is DOM scraping of analytics pages, not Voyager API calls. Voyager API used only for identity resolution.
 
 ## Phase 1: Project Scaffolding
 
-1. Clone repo, init npm workspace with three packages: `extension/`, `server/`, `dashboard/`
+1. Init npm workspace with three packages: `extension/`, `server/`, `dashboard/`
 2. Set up TypeScript config (root `tsconfig.json` + per-package)
 3. Set up Vite configs (separate for extension and dashboard)
 4. Create `extension/manifest.json` with required permissions
@@ -29,7 +23,7 @@ This must be done by a human in a real browser:
 1. Set up Fastify server in `server/src/index.ts`
 2. Implement SQLite schema initialization with WAL mode (`server/src/db/schema.sql`)
 3. Implement migration runner (`schema_version` table + sequential `.sql` files)
-4. Implement `POST /api/ingest` with Zod validation
+4. Implement `POST /api/ingest` with Zod validation (updated schema includes `members_reached`, `saves`, `sends`)
 5. Implement `GET /api/health`
 6. Implement `GET /api/posts` with filtering, sorting, pagination
 7. Implement `GET /api/metrics/:postId`
@@ -50,17 +44,19 @@ This must be done by a human in a real browser:
    - POST to localhost `/api/ingest`
    - Sync state management (`chrome.storage.local` for timestamps, `chrome.storage.session` for transient state)
 3. Build content script (`content/`):
-   - Voyager API client (fetch calls using discovered endpoints from Phase 0)
-   - User identity resolution (`/voyager/api/me`)
-   - Post list fetcher (batched, 25 at a time)
-   - Metrics fetcher per post
-   - Follower count fetcher
-   - Profile views fetcher
-   - Zod schema validation on every response
+   - **DOM scrapers** for each analytics page (the primary data collection method):
+     - Top posts scraper: `/analytics/creator/top-posts?timeRange=past_30_days&metricType=IMPRESSIONS` → extract post IDs, content previews, reactions, comments, impressions
+     - Post detail scraper: `/analytics/post-summary/urn:li:activity:{id}/` → extract impressions, members reached, reactions, comments, reposts, saves, sends, demographics
+     - Audience scraper: `/analytics/creator/audience` → extract total followers, new follower data
+     - Profile views scraper: `/analytics/profile-views/` → extract profile view count
+     - Search appearances scraper: `/analytics/search-appearances/` → extract appearance count, breakdown
+   - **Voyager API client** (identity resolution only): resolve user profile URN via `/voyager/api/me`
+   - Zod schema validation on every scraped data set
    - Relay collected data to service worker via `chrome.runtime.sendMessage`
 4. Handle SPA navigation via `chrome.webNavigation.onHistoryStateUpdated`
-5. Implement sync chunking (batches of 25, follow-up alarms)
+5. Implement sync chunking (batches of 25 post detail pages, follow-up alarms)
 6. Implement offline queue in `chrome.storage.local` with 5MB cap
+7. **Metric decay logic:** Only scrape post detail pages for posts <30 days old. On first install (backfill), scrape `past_365_days` for all available posts.
 
 ## Phase 4: Extension Popup
 
@@ -98,5 +94,5 @@ This must be done by a human in a real browser:
 1. End-to-end test: extension → server → database → dashboard
 2. Verify sync chunking and worker restart recovery
 3. Test offline queue behavior (server down → server back up)
-4. Test error scenarios (bad API responses, expired session)
+4. Test error scenarios (DOM structure changes, expired session)
 5. Write README with setup instructions

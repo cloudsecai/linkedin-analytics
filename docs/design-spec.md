@@ -2,7 +2,7 @@
 
 ## Overview
 
-A Chrome extension + local Node server that collects LinkedIn post analytics via LinkedIn's internal Voyager API and stores them in a local SQLite database. A dashboard served by the local server provides charts, tables, and insights for optimizing LinkedIn content strategy.
+A Chrome extension + local Node server that collects LinkedIn post analytics via DOM scraping of LinkedIn's server-rendered analytics pages (supplemented by Voyager API calls for identity data) and stores them in a local SQLite database. A dashboard served by the local server provides charts, tables, and insights for optimizing LinkedIn content strategy.
 
 **Goals:**
 - Own your LinkedIn analytics data locally — no subscriptions, no third parties
@@ -20,30 +20,18 @@ A Chrome extension + local Node server that collects LinkedIn post analytics via
 
 ## Prerequisites
 
-**Voyager API Discovery Spike (must complete before implementation):**
+**Discovery Spike (COMPLETE):**
 
-The Voyager API is undocumented and endpoints change without notice. Before writing code, we must capture the actual API calls LinkedIn's frontend makes. This involves:
+The discovery spike revealed that LinkedIn's analytics pages are **server-side rendered** — analytics data is baked into the HTML, not loaded via separate Voyager API calls. This means the collection strategy is **DOM scraping of analytics pages**, not pure Voyager API calls.
 
-1. Open Chrome DevTools Network tab on `linkedin.com`
-2. Navigate to your analytics/creator dashboard pages
-3. Filter for `/voyager/api/` requests
-4. Document exact endpoints, request parameters, and response shapes for:
-   - Listing your own posts (paginated)
-   - Per-post metrics (impressions, reactions, comments, reposts)
-   - Follower count
-   - Profile views / search appearances
-5. Create Zod schemas from the actual response shapes
-6. Record which pages trigger which API calls
+Full findings documented in `docs/voyager-endpoints.md`. Key pages discovered:
+- `/analytics/creator/top-posts?timeRange=past_365_days&metricType=IMPRESSIONS` — full post list (50 posts on 365d view, no pagination)
+- `/analytics/post-summary/urn:li:activity:{id}/` — per-post deep dive (impressions, reach, reactions, comments, reposts, saves, sends, demographics)
+- `/analytics/creator/audience` — total followers, new follower chart, demographics
+- `/analytics/profile-views/` — profile view count and chart
+- `/analytics/search-appearances/` — appearance count, breakdown by type
 
-**Known endpoints from research (need validation):**
-- `feed/updatesV2?q=backendUrnOrNss&urnOrNss=urn:li:activity:{postId}` — individual post data including `numViews`
-- `identity/profiles/{publicIdentifier}/networkinfo` — follower count
-- `identity/wvmpCards` — profile view analytics ("Who Viewed My Profile")
-- Post listing endpoint — **unknown, must discover during spike**
-
-This spike produces a `voyager-endpoints.md` document that the implementation depends on.
-
-**Risk:** If the spike reveals that there is no clean paginated "list my posts" endpoint (e.g., LinkedIn's feed mixes your posts with others), the collection strategy may need to pivot to scraping the analytics page DOM instead. The rest of the architecture (server, database, dashboard) remains the same regardless — only the extension's data collection layer would change.
+Voyager API is used only for identity resolution (profile URN, public identifier).
 
 ## Architecture
 
@@ -73,10 +61,17 @@ Two modules inside the extension:
 - Scheduled via `chrome.alarms` (not `setTimeout` — service workers die after 30s of inactivity)
 - On alarm fire, checks last sync time via `GET localhost:3210/api/health`
 - If 24+ hours since last sync AND user has a `linkedin.com` tab open, triggers sync
-- **All Voyager API calls are made from the content script** on `linkedin.com` (same-origin — cookies sent automatically, no CORS issues). The content script relays collected data to the service worker via `chrome.runtime.sendMessage`, and the service worker POSTs to `localhost:3210/api/ingest`.
-- Daily sync fetches last 50 posts + metrics, follower count, profile views
-- Uses the user's existing session cookies (`li_at`, `JSESSIONID`) — requests are same-origin and identical to LinkedIn's own frontend
-- Human-like request pacing: 1-3 second random delays between API calls
+- **Collection via DOM scraping:** The content script navigates to LinkedIn analytics pages in a background tab and extracts data from the server-rendered HTML. Analytics data is baked into the page — there are no separate API calls to intercept.
+- **Scrape sequence per sync:**
+  1. Open `/analytics/creator/top-posts?timeRange=past_30_days&metricType=IMPRESSIONS` → extract post list (IDs, content preview, reactions, comments, impressions)
+  2. For each post <30 days old, navigate to `/analytics/post-summary/urn:li:activity:{id}/` → extract detailed metrics (impressions, reach, reactions, comments, reposts, saves, sends, demographics)
+  3. Navigate to `/analytics/creator/audience` → extract total followers, new follower data
+  4. Navigate to `/analytics/profile-views/` → extract profile view count
+  5. Navigate to `/analytics/search-appearances/` → extract appearance count and breakdown
+- Content script relays scraped data to service worker via `chrome.runtime.sendMessage`, service worker POSTs to `localhost:3210/api/ingest`
+- Uses the user's existing session cookies — page loads are identical to normal browsing
+- Human-like pacing: 1-3 second random delays between page navigations
+- **Metric decay:** Posts older than 30 days are not re-scraped — their metrics have plateaued. Only the initial backfill scrapes the full 365-day history.
 - **Sync chunking:** To stay within the MV3 5-minute service worker hard limit, syncs are chunked into batches of 25 posts. Each batch completes independently (data POSTed to server), and the next batch is triggered via a follow-up alarm. If the worker is killed mid-sync, it resumes from the last completed batch on the next alarm.
 - Sync timestamps persisted to `chrome.storage.local` (survives browser restarts). Transient state (in-progress flag, current batch cursor) stored in `chrome.storage.session`.
 
@@ -98,11 +93,13 @@ Two modules inside the extension:
 - "Open Dashboard" button → opens `localhost:3210` in a new tab
 - Auth status — "Please log in to LinkedIn" if session expired
 
-**Voyager API Details:**
+**Voyager API (identity resolution only):**
 
 Base URL: `https://www.linkedin.com/voyager/api/`
 
-Authentication:
+Used only for resolving user identity on first sync. All analytics data comes from DOM scraping.
+
+Authentication (for Voyager calls and page loads):
 ```
 Cookie: JSESSIONID={jsessionid}; li_at={li_at}
 csrf-token: {jsessionid}   // JSESSIONID value with quotes stripped
@@ -116,7 +113,7 @@ Required manifest permissions:
 }
 ```
 
-**Data flow:** Content script (on linkedin.com) makes Voyager API calls (same-origin) → relays data via `chrome.runtime.sendMessage` → service worker POSTs to `localhost:3210/api/ingest`. The service worker needs `host_permissions` for localhost.
+**Data flow:** Content script (on linkedin.com) navigates to analytics pages and scrapes DOM data (same-origin — cookies sent automatically) → relays scraped data via `chrome.runtime.sendMessage` → service worker POSTs to `localhost:3210/api/ingest`. The service worker needs `host_permissions` for localhost.
 
 Post ID extraction from LinkedIn URLs: `link.match(/activity-(?<postId>\d+)/)?.groups?.postId`
 
@@ -174,9 +171,12 @@ interface IngestPayload {
   post_metrics?: Array<{
     post_id: string;         // References posts.id
     impressions?: number;
+    members_reached?: number;
     reactions?: number;
     comments?: number;
     reposts?: number;
+    saves?: number;
+    sends?: number;
   }>;
   followers?: {
     total_followers: number;
@@ -281,9 +281,12 @@ CREATE TABLE post_metrics (
   post_id TEXT NOT NULL REFERENCES posts(id),
   scraped_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   impressions INTEGER,
+  members_reached INTEGER,
   reactions INTEGER,
   comments INTEGER,
-  reposts INTEGER
+  reposts INTEGER,
+  saves INTEGER,
+  sends INTEGER
   -- engagement_rate computed at query time: (reactions + comments + reposts) / NULLIF(impressions, 0)
 );
 CREATE INDEX idx_post_metrics_post_id ON post_metrics(post_id);
@@ -373,11 +376,11 @@ FROM follower_snapshots;
 
 **On first install (backfill):**
 1. User installs extension, starts local server (`npm start`)
-2. Extension detects first visit to LinkedIn, resolves user identity, triggers backfill
-3. Fetches post history via Voyager API in batches of 25, up to 50 posts for v1
-4. Records initial metrics snapshot for each post
-5. Grabs current follower count and profile views
-6. Backfill progress (last cursor/offset) stored in `chrome.storage.local` — if interrupted, resumes from last completed batch on next alarm
+2. Extension detects first visit to LinkedIn, resolves user identity via Voyager API, triggers backfill
+3. Opens background tab to `/analytics/creator/top-posts?timeRange=past_365_days&metricType=IMPRESSIONS` → scrapes all posts (up to 50 shown by LinkedIn)
+4. For each post, navigates to `/analytics/post-summary/urn:li:activity:{id}/` → scrapes detailed metrics
+5. Scrapes audience, profile views, and search appearances pages
+6. Backfill progress (last completed post index) stored in `chrome.storage.local` — if interrupted, resumes from last completed batch on next alarm
 
 **Server startup:** The user must manually start the server with `npm start`. For convenience, provide a `start.sh` script. Auto-start on login (via launchd on macOS) is a future consideration, not v1.
 
@@ -385,22 +388,23 @@ FROM follower_snapshots;
 1. `chrome.alarms` fires every 30 minutes
 2. Service worker checks `localhost:3210/api/health` for last sync time
 3. If 24+ hours since last sync AND user has a linkedin.com tab open, triggers active sync
-4. Active syncer fetches recent posts (last 50), per-post metrics, followers, profile views
-5. POSTs everything to local server via `/api/ingest`
+4. Active syncer scrapes analytics pages: top-posts (30-day), per-post detail pages for recent posts, audience, profile views, search appearances
+5. POSTs scraped data to local server via `/api/ingest`
 6. Server deduplicates and appends snapshots
 7. If user skips days, next visit catches up automatically
 
 **Anti-detection measures:**
-- All requests use the user's real browser session, cookies, and IP — indistinguishable from normal browsing
-- Human-like pacing: 1-3 second random delays between API calls during active sync
+- All page loads use the user's real browser session, cookies, and IP — indistinguishable from normal browsing
+- Human-like pacing: 1-3 second random delays between page navigations during sync
 - No headless browsers, no proxy rotation, no fingerprint spoofing needed
 - Daily frequency is low enough to stay well under any rate limits
+- DOM scraping is less detectable than API calls — it's just loading pages the user would normally visit
 
 ## Error Handling and Resilience
 
 **Schema validation (Zod):**
-- Every Voyager API response validated against expected schema before processing
-- If validation fails, response logged with full details and that data source marked as broken
+- Every scraped data set validated against expected Zod schema before POSTing to server
+- If scraping fails (expected DOM elements missing, data extraction returns nulls), that data source marked as broken — likely means LinkedIn changed their page structure
 - Other data sources continue working independently
 
 **Per-source health tracking:**
@@ -410,7 +414,7 @@ FROM follower_snapshots;
 
 **Graceful degradation:**
 - If the local server is unreachable, extension queues data in `chrome.storage.local` (10MB total quota shared with other extension data — cap queue at 5MB, drop oldest if full) and retries next sync
-- If a Voyager endpoint changes, only that data source breaks — everything else keeps working
+- If LinkedIn changes a page's DOM structure, only that data source breaks — everything else keeps working
 - If the user's LinkedIn session expires, extension detects auth errors and shows "Please log in to LinkedIn" in the popup
 
 ## Tech Stack Summary
@@ -421,7 +425,7 @@ FROM follower_snapshots;
 | Server | Node.js, Fastify, better-sqlite3 |
 | Dashboard | React, Chart.js, TailwindCSS |
 | Build | Vite (separate configs for extension and dashboard) |
-| Validation | Zod (Voyager API response schemas + ingest request schema) |
+| Validation | Zod (scraped data schemas + ingest request schema) |
 | Database | SQLite (file on disk, WAL mode) |
 
 ## Project Structure
@@ -431,7 +435,7 @@ linkedin-analytics/
 ├── extension/              # Chrome extension source
 │   ├── manifest.json
 │   ├── src/
-│   │   ├── content/        # Content script (Voyager API calls, relays data to service worker)
+│   │   ├── content/        # Content script (DOM scraping, Voyager identity calls, relays data to service worker)
 │   │   ├── background/     # Service worker (alarms, sync orchestration, localhost POST)
 │   │   ├── popup/          # Extension popup UI
 │   │   └── shared/         # Types, Voyager API client, Zod schemas
