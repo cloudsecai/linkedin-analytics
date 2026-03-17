@@ -44,7 +44,12 @@ export function registerSettingsRoutes(
       return { ok: true };
     }
 
-    // Handle raw binary upload
+    // Handle raw binary upload — validate MIME type
+    if (!ALLOWED_TYPES.has(contentType.split(";")[0].trim())) {
+      return reply
+        .status(400)
+        .send({ error: "Only JPEG and PNG files are allowed" });
+    }
     const body = request.body as Buffer;
     if (!body || body.length === 0) {
       return reply.status(400).send({ error: "No file provided" });

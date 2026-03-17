@@ -10,6 +10,18 @@ export default function Settings() {
     api.authorPhoto().then(setPhotoUrl).catch(() => {});
   }, []);
 
+  // Revoke previous blob URL whenever photoUrl changes or on unmount
+  const prevUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevUrlRef.current) {
+      URL.revokeObjectURL(prevUrlRef.current);
+    }
+    prevUrlRef.current = photoUrl;
+    return () => {
+      if (photoUrl) URL.revokeObjectURL(photoUrl);
+    };
+  }, [photoUrl]);
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
