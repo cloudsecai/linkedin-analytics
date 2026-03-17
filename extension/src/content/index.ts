@@ -5,6 +5,7 @@ import {
   scrapeAudience,
   scrapeProfileViews,
   scrapeSearchAppearances,
+  scrapePostPage,
 } from "./scrapers.js";
 import {
   scrapedPostSchema,
@@ -12,6 +13,7 @@ import {
   scrapedAudienceSchema,
   scrapedProfileViewsSchema,
   scrapedSearchAppearancesSchema,
+  scrapedPostContentSchema,
 } from "../shared/types.js";
 import type { ContentMessage } from "../shared/types.js";
 import { z } from "zod";
@@ -65,6 +67,16 @@ function validate<T>(schema: z.ZodType<T>, data: unknown, pageName: string): T {
 
 async function scrapeCurrent(): Promise<ContentMessage> {
   const url = location.href;
+
+  if (url.includes("/feed/update/urn:li:activity:")) {
+    await requireSelector(
+      ".feed-shared-inline-show-more-text, .feed-shared-update-v2__description",
+      "post-page"
+    );
+    const raw = scrapePostPage(document);
+    const data = validate(scrapedPostContentSchema, raw, "post-content");
+    return { type: "post-content", data };
+  }
 
   if (url.includes("/analytics/creator/top-posts")) {
     await requireSelector(

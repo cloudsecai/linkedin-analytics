@@ -174,6 +174,29 @@ async function startSync() {
         })),
       });
 
+      // Scrape post pages for full text + images (only for posts missing content)
+      try {
+        const needsContentRes = await fetch(
+          `${SERVER_URL}/api/posts/needs-content`
+        );
+        if (needsContentRes.ok) {
+          const { post_ids: needsContentIds } = await needsContentRes.json();
+          const currentPostIds = new Set(posts.map((p: ScrapedPost) => p.id));
+          const toScrape = needsContentIds.filter((id: string) =>
+            currentPostIds.has(id)
+          );
+          if (toScrape.length > 0) {
+            await scrapePostPages(tab.id!, toScrape, isBackfill);
+          }
+        }
+      } catch (err: any) {
+        console.error(
+          "[LinkedIn Analytics] Post page scraping failed:",
+          err.message
+        );
+        // Non-fatal — continue with detail metrics
+      }
+
       // Filter posts for detail scraping:
       // - Backfill: scrape all posts
       // - Daily sync: only posts <30 days old
@@ -275,6 +298,75 @@ async function processBatch(
       await queueForRetry({ post_metrics: metricsToSend });
     }
     await finishSyncWithError(err.message);
+  }
+}
+
+async function scrapePostPages(
+  tabId: number,
+  postIds: string[],
+  isBackfill: boolean
+): Promise<void> {
+  const pacingMin = isBackfill ? BACKFILL_PACING_MIN_MS : PACING_MIN_MS;
+  const pacingMax = isBackfill ? BACKFILL_PACING_MAX_MS : PACING_MAX_MS;
+
+  for (const postId of postIds) {
+    const postUrl = `https://www.linkedin.com/feed/update/urn:li:activity:${postId}/`;
+
+    await chrome.tabs.update(tabId, { url: postUrl });
+    await waitForTabLoad(tabId);
+    await randomDelay(pacingMin, pacingMax);
+
+    // Phase 1: Scrape BEFORE "see more" click — captures hook_text (truncated view)
+    const hookResult = await sendScrapeCommand(tabId);
+    let hookText: string | null = null;
+    let imageUrls: string[] = [];
+
+    if (hookResult.type === "post-content") {
+      hookText = hookResult.data.hook_text;
+      imageUrls = hookResult.data.image_urls;
+    }
+
+    // Phase 2: Click "see more" if present, then re-scrape for full_text
+    let fullText: string | null = hookText; // default to hook if no expansion
+    try {
+      const [clickResult] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          const seeMore = document.querySelector(
+            ".feed-shared-inline-show-more-text__see-more-less-toggle"
+          ) as HTMLElement | null;
+          if (seeMore) {
+            seeMore.click();
+            return true;
+          }
+          return false;
+        },
+      });
+
+      if (clickResult?.result) {
+        // Wait for text expansion
+        await new Promise((r) => setTimeout(r, 1500));
+        // Re-scrape to get full expanded text
+        const fullResult = await sendScrapeCommand(tabId);
+        if (fullResult.type === "post-content") {
+          fullText = fullResult.data.full_text;
+        }
+      }
+    } catch {
+      // No see more button or script injection failed — continue with hook as full
+    }
+
+    // POST content to server as a partial post update
+    await postToServer({
+      posts: [
+        {
+          id: postId,
+          full_text: fullText,
+          hook_text: hookText,
+          image_urls: imageUrls,
+        },
+      ],
+    });
   }
 }
 
@@ -393,16 +485,37 @@ function waitForTabLoad(tabId: number): Promise<void> {
   });
 }
 
-function sendScrapeCommand(tabId: number): Promise<ContentMessage> {
-  return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, { type: "scrape-page" }, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else {
-        resolve(response as ContentMessage);
+async function sendScrapeCommand(tabId: number): Promise<ContentMessage> {
+  // Content script may not be ready immediately after tab load.
+  // Retry a few times with short delays.
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY_MS = 1000;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const response = await new Promise<ContentMessage>((resolve, reject) => {
+        chrome.tabs.sendMessage(tabId, { type: "scrape-page" }, (res) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(res as ContentMessage);
+          }
+        });
+      });
+      return response;
+    } catch (err: any) {
+      if (
+        attempt < MAX_RETRIES - 1 &&
+        err.message?.includes("Receiving end does not exist")
+      ) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        continue;
       }
-    });
-  });
+      throw err;
+    }
+  }
+
+  throw new Error("Content script not responding after retries");
 }
 
 /** POST to server directly — throws on failure */
