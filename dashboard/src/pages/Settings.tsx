@@ -3,8 +3,7 @@ import { api } from "../api/client";
 
 export default function Settings() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -15,13 +14,9 @@ export default function Settings() {
   const [promptLoading, setPromptLoading] = useState(false);
 
   useEffect(() => {
-    api.authorPhoto().then(setPhotoUrl).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/settings/author-photo")
+    fetch("/api/settings/author-photo", { method: "HEAD" })
       .then((r) => {
-        if (r.ok) setPhotoPreviewUrl(`/api/settings/author-photo?t=${Date.now()}`);
+        if (r.ok) setPhotoUrl(`/api/settings/author-photo?t=${Date.now()}`);
       })
       .catch(() => {});
   }, []);
@@ -31,44 +26,18 @@ export default function Settings() {
     api.getWritingPromptHistory().then((r) => setPromptHistory(r.history)).catch(() => {});
   }, []);
 
-  // Revoke previous blob URL whenever photoUrl changes or on unmount
-  const prevUrlRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (prevUrlRef.current) {
-      URL.revokeObjectURL(prevUrlRef.current);
-    }
-    prevUrlRef.current = photoUrl;
-    return () => {
-      if (photoUrl) URL.revokeObjectURL(photoUrl);
-    };
-  }, [photoUrl]);
-
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     if (!["image/jpeg", "image/png"].includes(file.type)) {
-      alert("Please upload a JPEG or PNG file.");
+      setPhotoError("Please upload a JPEG or PNG file.");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      alert("File too large. Max 5MB.");
+      setPhotoError("File too large. Max 5MB.");
       return;
     }
-
-    setUploading(true);
-    try {
-      await api.uploadAuthorPhoto(file);
-      const url = await api.authorPhoto();
-      setPhotoUrl(url);
-    } catch {
-      alert("Upload failed. Please try again.");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handlePhotoUpload = async (file: File) => {
+    setPhotoLoading(true);
     setPhotoError(null);
     try {
       const res = await fetch("/api/settings/author-photo", {
@@ -81,15 +50,21 @@ export default function Settings() {
         setPhotoError((err as any).error ?? "Upload failed");
         return;
       }
-      setPhotoPreviewUrl(`/api/settings/author-photo?t=${Date.now()}`);
+      setPhotoUrl(`/api/settings/author-photo?t=${Date.now()}`);
     } catch {
       setPhotoError("Upload failed — check your connection");
+    } finally {
+      setPhotoLoading(false);
     }
   };
 
   const handleDelete = async () => {
-    await api.deleteAuthorPhoto();
-    setPhotoUrl(null);
+    try {
+      await fetch("/api/settings/author-photo", { method: "DELETE" });
+      setPhotoUrl(null);
+    } catch {
+      setPhotoError("Delete failed");
+    }
   };
 
   const handleSavePrompt = async () => {
@@ -133,9 +108,10 @@ export default function Settings() {
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => fileInput.current?.click()}
-                className="px-3 py-1.5 rounded-md text-xs font-medium bg-surface-2 text-text-primary hover:bg-surface-3 transition-colors"
+                disabled={photoLoading}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-surface-2 text-text-primary hover:bg-surface-3 transition-colors disabled:opacity-50"
               >
-                Replace
+                {photoLoading ? "Uploading..." : "Replace"}
               </button>
               <button
                 onClick={handleDelete}
@@ -148,16 +124,13 @@ export default function Settings() {
         ) : (
           <button
             onClick={() => fileInput.current?.click()}
-            disabled={uploading}
+            disabled={photoLoading}
             className="px-4 py-2 rounded-md text-sm font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors disabled:opacity-50"
           >
-            {uploading ? "Uploading..." : "Upload Photo"}
+            {photoLoading ? "Uploading..." : "Upload Photo"}
           </button>
         )}
 
-        {photoPreviewUrl && (
-          <img src={photoPreviewUrl} alt="Author photo preview" className="w-16 h-16 rounded-full object-cover" />
-        )}
         {photoError && (
           <p className="text-xs text-negative">{photoError}</p>
         )}
