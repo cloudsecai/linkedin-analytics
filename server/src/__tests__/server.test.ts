@@ -1,19 +1,23 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { buildApp } from "../app.js";
 import type { FastifyInstance } from "fastify";
+import BetterSqlite3 from "better-sqlite3";
 import fs from "fs";
 import path from "path";
 
 const TEST_DB_PATH = path.join(import.meta.dirname, "../../data/test-server.db");
 
 let app: FastifyInstance;
+let db: BetterSqlite3.Database;
 
 beforeAll(async () => {
   app = buildApp(TEST_DB_PATH);
   await app.ready();
+  db = new BetterSqlite3(TEST_DB_PATH, { readonly: true });
 });
 
 afterAll(async () => {
+  db?.close();
   await app.close();
   try {
     fs.unlinkSync(TEST_DB_PATH);
@@ -290,6 +294,14 @@ describe("POST /api/ingest", () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().posts_upserted).toBe(1);
+
+    // Verify DB state: content_type preserved, new fields populated
+    const row = db
+      .prepare("SELECT content_type, full_text, hook_text FROM posts WHERE id = ?")
+      .get("partial-update-test") as any;
+    expect(row.content_type).toBe("text"); // preserved from first insert
+    expect(row.full_text).toBe("Full text added later");
+    expect(row.hook_text).toBe("Hook text added later");
   });
 
   it("rejects invalid content_type", async () => {
