@@ -1,11 +1,13 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type Database from "better-sqlite3";
 import BetterSqlite3 from "better-sqlite3";
+import path from "path";
 import { AiLogger } from "./logger.js";
 import { runAnalysis } from "./analyzer.js";
 import type { AnalysisResult } from "./analyzer.js";
 import { discoverTaxonomy } from "./taxonomy.js";
 import { tagPosts } from "./tagger.js";
+import { classifyImages } from "./image-classifier.js";
 import {
   createRun,
   completeRun,
@@ -102,6 +104,10 @@ export async function runPipeline(
         .all(...untaggedIds) as { id: string; content_preview: string | null }[];
       await tagPosts(client, db, posts, logger);
     }
+
+    // Classify unclassified images
+    const dataDir = path.dirname(db.name);
+    await classifyImages(client, db, dataDir, logger);
 
     // Open read-only connection for LLM query tool (safety: prevents writes)
     const queryDb = new BetterSqlite3(db.name, { readonly: true });
