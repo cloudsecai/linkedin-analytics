@@ -139,6 +139,37 @@ export function buildApp(dbPath: string) {
       error_details: errors.length > 0 ? JSON.stringify(errorDetails) : null,
     });
 
+    // Auto-trigger image downloads for posts with image_urls
+    if (payload.posts) {
+      const postsWithImages = payload.posts.filter(
+        (p) => p.image_urls && p.image_urls.length > 0
+      );
+      if (postsWithImages.length > 0) {
+        // Fire and forget — don't block the response
+        import("./ai/image-downloader.js").then(({ downloadPostImages }) => {
+          const dataDir = path.join(path.dirname(dbPath), "images");
+          for (const post of postsWithImages) {
+            // Check if already downloaded
+            const existing = db
+              .prepare("SELECT image_local_paths FROM posts WHERE id = ?")
+              .get(post.id) as { image_local_paths: string | null } | undefined;
+            if (existing?.image_local_paths) continue;
+
+            downloadPostImages(post.id, post.image_urls!, dataDir).then((paths) => {
+              if (paths.length > 0) {
+                db.prepare("UPDATE posts SET image_local_paths = ? WHERE id = ?").run(
+                  JSON.stringify(paths),
+                  post.id
+                );
+              }
+            }).catch((err: any) => {
+              console.error(`[Image Download] Failed for ${post.id}:`, err.message);
+            });
+          }
+        }).catch(() => {});
+      }
+    }
+
     // Auto-trigger AI pipeline if conditions met
     const aiApiKey = process.env.TRUSTMIND_LLM_API_KEY;
     if (aiApiKey && postsUpserted > 0) {
@@ -166,6 +197,19 @@ export function buildApp(dbPath: string) {
       metrics_inserted: metricsInserted,
       ...(errors.length > 0 ? { errors } : {}),
     };
+  });
+
+  // Serve post images
+  app.get("/api/images/:postId/:index", async (request, reply) => {
+    const { postId, index } = request.params as { postId: string; index: string };
+    const dataDir = path.join(path.dirname(dbPath), "images");
+    const imagePath = path.join(dataDir, postId, `${index}.jpg`);
+
+    if (!fs.existsSync(imagePath)) {
+      return reply.status(404).send({ error: "Image not found" });
+    }
+
+    return reply.type("image/jpeg").send(fs.readFileSync(imagePath));
   });
 
   // Posts needing content scraping

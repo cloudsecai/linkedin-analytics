@@ -572,6 +572,34 @@ describe("GET /api/posts/needs-content", () => {
   });
 });
 
+describe("GET /api/images/:postId/:index", () => {
+  it("returns 404 when image doesn't exist", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/images/nonexistent/0",
+    });
+    expect(response.statusCode).toBe(404);
+  });
+
+  it("serves image when it exists", async () => {
+    // Create a test image file in the expected location
+    const dataDir = path.join(path.dirname(TEST_DB_PATH), "images");
+    const postDir = path.join(dataDir, "serve-test");
+    fs.mkdirSync(postDir, { recursive: true });
+    fs.writeFileSync(path.join(postDir, "0.jpg"), Buffer.from([0xFF, 0xD8, 0xFF])); // JPEG magic bytes
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/images/serve-test/0",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("image/jpeg");
+
+    // Cleanup
+    fs.rmSync(postDir, { recursive: true, force: true });
+  });
+});
+
 describe("CORS", () => {
   it("allows chrome-extension:// origins", async () => {
     const res = await app.inject({
