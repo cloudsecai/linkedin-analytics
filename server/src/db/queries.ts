@@ -5,26 +5,54 @@ export function upsertPost(
   post: {
     id: string;
     content_preview?: string | null;
-    content_type: string;
-    published_at: string;
+    content_type?: string | null;
+    published_at?: string | null;
     url?: string | null;
+    full_text?: string | null;
+    hook_text?: string | null;
+    image_urls?: string[] | null;
   }
 ): void {
-  db.prepare(
-    `INSERT INTO posts (id, content_preview, content_type, published_at, url)
-     VALUES (@id, @content_preview, @content_type, @published_at, @url)
-     ON CONFLICT(id) DO UPDATE SET
-       content_preview = COALESCE(@content_preview, content_preview),
-       content_type = @content_type,
-       published_at = @published_at,
-       url = COALESCE(@url, url)`
-  ).run({
-    id: post.id,
-    content_preview: post.content_preview ?? null,
-    content_type: post.content_type,
-    published_at: post.published_at,
-    url: post.url ?? null,
-  });
+  const imageUrlsJson = post.image_urls ? JSON.stringify(post.image_urls) : null;
+
+  // If the post already exists, do a partial UPDATE (avoids NOT NULL constraint
+  // issues when content_type/published_at are omitted in a partial update).
+  if (postExists(db, post.id)) {
+    db.prepare(
+      `UPDATE posts SET
+         content_preview = COALESCE(@content_preview, content_preview),
+         content_type = COALESCE(@content_type, content_type),
+         published_at = COALESCE(@published_at, published_at),
+         url = COALESCE(@url, url),
+         full_text = COALESCE(@full_text, full_text),
+         hook_text = COALESCE(@hook_text, hook_text),
+         image_urls = COALESCE(@image_urls, image_urls)
+       WHERE id = @id`
+    ).run({
+      id: post.id,
+      content_preview: post.content_preview ?? null,
+      content_type: post.content_type ?? null,
+      published_at: post.published_at ?? null,
+      url: post.url ?? null,
+      full_text: post.full_text ?? null,
+      hook_text: post.hook_text ?? null,
+      image_urls: imageUrlsJson,
+    });
+  } else {
+    db.prepare(
+      `INSERT INTO posts (id, content_preview, content_type, published_at, url, full_text, hook_text, image_urls)
+       VALUES (@id, @content_preview, @content_type, @published_at, @url, @full_text, @hook_text, @image_urls)`
+    ).run({
+      id: post.id,
+      content_preview: post.content_preview ?? null,
+      content_type: post.content_type ?? null,
+      published_at: post.published_at ?? null,
+      url: post.url ?? null,
+      full_text: post.full_text ?? null,
+      hook_text: post.hook_text ?? null,
+      image_urls: imageUrlsJson,
+    });
+  }
 }
 
 export function insertPostMetrics(

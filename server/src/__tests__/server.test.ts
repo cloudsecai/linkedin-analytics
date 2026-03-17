@@ -236,6 +236,62 @@ describe("POST /api/ingest", () => {
     expect(res.json().ok).toBe(true);
   });
 
+  it("accepts full_text, hook_text, image_urls on posts", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/ingest",
+      payload: {
+        posts: [
+          {
+            id: "content-fields-test",
+            content_type: "image",
+            published_at: "2025-01-15T10:00:00+00:00",
+            full_text: "This is the full post text with lots of details.",
+            hook_text: "This is the hook text...",
+            image_urls: ["https://media.licdn.com/dms/image/test1.jpg"],
+          },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.posts_upserted).toBe(1);
+  });
+
+  it("accepts partial post without content_type and published_at", async () => {
+    // First create the post with required fields
+    await app.inject({
+      method: "POST",
+      url: "/api/ingest",
+      payload: {
+        posts: [
+          {
+            id: "partial-update-test",
+            content_type: "text",
+            published_at: "2025-01-15T10:00:00+00:00",
+          },
+        ],
+      },
+    });
+
+    // Then update with just content fields
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/ingest",
+      payload: {
+        posts: [
+          {
+            id: "partial-update-test",
+            full_text: "Full text added later",
+            hook_text: "Hook text added later",
+          },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().posts_upserted).toBe(1);
+  });
+
   it("rejects invalid content_type", async () => {
     const res = await app.inject({
       method: "POST",
