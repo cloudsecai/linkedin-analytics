@@ -572,6 +572,119 @@ describe("GET /api/posts/needs-content", () => {
   });
 });
 
+describe("GET /api/posts/top-examples", () => {
+  beforeAll(async () => {
+    // Create posts with full_text and metrics for testing
+    const longText = "A".repeat(250);
+    const announcementText = "I am excited to announce that " + "B".repeat(200);
+
+    // Good post (long enough, has metrics, not an announcement)
+    await app.inject({
+      method: "POST",
+      url: "/api/ingest",
+      payload: {
+        posts: [
+          {
+            id: "top-ex-1",
+            content_type: "text",
+            published_at: "2026-03-01T10:00:00Z",
+            full_text: longText,
+          },
+        ],
+        post_metrics: [
+          { post_id: "top-ex-1", impressions: 5000, reactions: 100, comments: 20, reposts: 10 },
+        ],
+      },
+    });
+
+    // Announcement post (should be filtered out)
+    await app.inject({
+      method: "POST",
+      url: "/api/ingest",
+      payload: {
+        posts: [
+          {
+            id: "top-ex-2",
+            content_type: "text",
+            published_at: "2026-03-02T10:00:00Z",
+            full_text: announcementText,
+          },
+        ],
+        post_metrics: [
+          { post_id: "top-ex-2", impressions: 10000, reactions: 500, comments: 50, reposts: 30 },
+        ],
+      },
+    });
+
+    // Short post (should be filtered out by SQL — less than 200 chars)
+    await app.inject({
+      method: "POST",
+      url: "/api/ingest",
+      payload: {
+        posts: [
+          {
+            id: "top-ex-3",
+            content_type: "text",
+            published_at: "2026-03-03T10:00:00Z",
+            full_text: "Too short",
+          },
+        ],
+        post_metrics: [
+          { post_id: "top-ex-3", impressions: 8000, reactions: 200, comments: 30, reposts: 15 },
+        ],
+      },
+    });
+  });
+
+  it("returns posts sorted by impressions excluding announcements", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/posts/top-examples",
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toHaveProperty("posts");
+    expect(Array.isArray(body.posts)).toBe(true);
+
+    const ids = body.posts.map((p: any) => p.id);
+    expect(ids).toContain("top-ex-1");
+    // Announcement should be excluded
+    expect(ids).not.toContain("top-ex-2");
+    // Short post should be excluded
+    expect(ids).not.toContain("top-ex-3");
+  });
+
+  it("respects the limit query param", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/posts/top-examples?limit=1",
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.posts.length).toBeLessThanOrEqual(1);
+  });
+
+  it("returns expected fields on each post", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/posts/top-examples",
+    });
+    const body = res.json();
+    if (body.posts.length > 0) {
+      const post = body.posts[0];
+      expect(post).toHaveProperty("id");
+      expect(post).toHaveProperty("full_text");
+      expect(post).toHaveProperty("published_at");
+      expect(post).toHaveProperty("impressions");
+      expect(post).toHaveProperty("reactions");
+      expect(post).toHaveProperty("comments");
+      expect(post).toHaveProperty("reposts");
+      expect(post).toHaveProperty("engagement_rate");
+      expect(post).toHaveProperty("content_type");
+    }
+  });
+});
+
 describe("GET /api/images/:postId/:index", () => {
   it("returns 404 when image doesn't exist", async () => {
     const response = await app.inject({

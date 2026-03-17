@@ -58,7 +58,7 @@ export function buildApp(dbPath: string) {
     if (!parseResult.success) {
       return reply.status(400).send({
         ok: false,
-        error: parseResult.error.issues.map((i) => i.message).join(", "),
+        error: parseResult.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", "),
       });
     }
 
@@ -231,6 +231,51 @@ export function buildApp(dbPath: string) {
       .prepare("SELECT id FROM posts WHERE full_text IS NULL ORDER BY published_at DESC")
       .all() as { id: string }[];
     return { post_ids: rows.map((r) => r.id) };
+  });
+
+  // Top-performing posts (excluding announcements)
+  app.get("/api/posts/top-examples", async (request) => {
+    const q = request.query as any;
+    const limit = q.limit ? Number(q.limit) : 10;
+
+    const rows = db
+      .prepare(
+        `SELECT p.id, p.full_text, p.published_at, p.content_type,
+          m.impressions, m.reactions, m.comments, m.reposts,
+          CASE WHEN m.impressions > 0
+            THEN CAST(COALESCE(m.reactions, 0) + COALESCE(m.comments, 0) + COALESCE(m.reposts, 0) AS REAL) / m.impressions
+            ELSE NULL
+          END AS engagement_rate
+        FROM posts p
+        LEFT JOIN post_metrics m ON m.post_id = p.id
+          AND m.id = (SELECT MAX(id) FROM post_metrics WHERE post_id = p.id)
+        WHERE p.full_text IS NOT NULL
+          AND LENGTH(p.full_text) >= 200
+          AND m.impressions IS NOT NULL
+        ORDER BY m.impressions DESC`
+      )
+      .all() as any[];
+
+    const announcementKeywords = [
+      "excited to announce",
+      "thrilled to announce",
+      "proud to announce",
+      "happy to share that",
+      "excited to share",
+      "i'm joining",
+      "we're launching",
+      "pleased to announce",
+      "grateful this",
+      "had a great time at",
+      "had a great time yesterday",
+    ];
+
+    const filtered = rows.filter((row) => {
+      const text = row.full_text.toLowerCase();
+      return !announcementKeywords.some((kw) => text.includes(kw));
+    });
+
+    return { posts: filtered.slice(0, limit) };
   });
 
   // Posts
