@@ -6,17 +6,31 @@ import {
   type Changelog,
 } from "../api/client";
 
-const priorityColors: Record<string, string> = {
-  HIGH: "bg-negative/15 text-negative",
-  MED: "bg-warning/15 text-warning",
-  LOW: "bg-surface-2 text-text-muted",
-};
+function getPriorityLabel(p: number | string): { label: string; classes: string } {
+  if (typeof p === "string") {
+    const upper = p.toUpperCase();
+    if (upper === "HIGH") return { label: "HIGH", classes: "bg-negative/15 text-negative" };
+    if (upper === "MED" || upper === "MEDIUM") return { label: "MED", classes: "bg-warning/15 text-warning" };
+    return { label: "LOW", classes: "bg-surface-2 text-text-muted" };
+  }
+  // Numeric: 1 = high, 2 = med, 3+ = low
+  if (p <= 1) return { label: "HIGH", classes: "bg-negative/15 text-negative" };
+  if (p <= 2) return { label: "MED", classes: "bg-warning/15 text-warning" };
+  return { label: "LOW", classes: "bg-surface-2 text-text-muted" };
+}
 
-const confidenceDot: Record<string, string> = {
-  STRONG: "bg-positive",
-  MODERATE: "bg-warning",
-  WEAK: "bg-negative",
-};
+function getConfidenceLabel(c: number | string): { label: string; dotClass: string } {
+  if (typeof c === "string") {
+    const upper = c.toUpperCase();
+    if (upper === "STRONG") return { label: "Strong", dotClass: "bg-positive" };
+    if (upper === "MODERATE") return { label: "Moderate", dotClass: "bg-warning" };
+    return { label: "Weak", dotClass: "bg-negative" };
+  }
+  // Numeric: 0.8+ = strong, 0.6+ = moderate, else weak
+  if (c >= 0.8) return { label: "Strong", dotClass: "bg-positive" };
+  if (c >= 0.6) return { label: "Moderate", dotClass: "bg-warning" };
+  return { label: "Weak", dotClass: "bg-negative" };
+}
 
 function formatCategory(s: string): string {
   return s.replace(/_/g, " ");
@@ -139,24 +153,26 @@ export default function Coach() {
             >
               {/* Top row: priority + category + confidence */}
               <div className="flex items-center gap-2 flex-wrap">
-                <span
-                  className={`px-2 py-0.5 rounded text-xs font-semibold uppercase ${
-                    priorityColors[rec.priority] ?? priorityColors.LOW
-                  }`}
-                >
-                  {rec.priority}
-                </span>
+                {(() => {
+                  const p = getPriorityLabel(rec.priority);
+                  return (
+                    <span className={`px-2 py-0.5 rounded text-xs font-semibold uppercase ${p.classes}`}>
+                      {p.label}
+                    </span>
+                  );
+                })()}
                 <span className="text-xs text-text-muted uppercase tracking-wider">
                   {formatCategory(rec.type)}
                 </span>
-                <span className="flex items-center gap-1 text-xs text-text-muted ml-auto">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      confidenceDot[rec.confidence] ?? "bg-surface-3"
-                    }`}
-                  />
-                  {rec.confidence}
-                </span>
+                {(() => {
+                  const c = getConfidenceLabel(rec.confidence);
+                  return (
+                    <span className="flex items-center gap-1 text-xs text-text-muted ml-auto">
+                      <span className={`w-2 h-2 rounded-full ${c.dotClass}`} />
+                      {c.label}
+                    </span>
+                  );
+                })()}
               </div>
 
               {/* Headline + detail */}

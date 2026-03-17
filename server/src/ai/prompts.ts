@@ -37,9 +37,9 @@ Available tables and columns for query_db:
 - **post_metrics**: id (INTEGER PK), post_id (TEXT FK→posts.id), scraped_at (DATETIME), impressions (INTEGER), members_reached (INTEGER), reactions (INTEGER), comments (INTEGER), reposts (INTEGER), saves (INTEGER), sends (INTEGER), video_views (INTEGER), watch_time_seconds (INTEGER), avg_watch_time_seconds (INTEGER)
 - **follower_snapshots**: date (DATE PK), total_followers (INTEGER)
 - **profile_snapshots**: date (DATE PK), profile_views (INTEGER), search_appearances (INTEGER), all_appearances (INTEGER)
-- **ai_tags**: post_id (TEXT), tag (TEXT) — content tags
-- **ai_post_topics**: post_id (TEXT FK→posts.id), topic_id (TEXT FK→ai_taxonomy.id)
-- **ai_taxonomy**: id (TEXT PK), label (TEXT), description (TEXT)
+- **ai_tags**: post_id (TEXT PK), hook_type (TEXT), tone (TEXT), format_style (TEXT), tagged_at (DATETIME), model (TEXT)
+- **ai_post_topics**: post_id (TEXT FK→posts.id), taxonomy_id (INTEGER FK→ai_taxonomy.id)
+- **ai_taxonomy**: id (INTEGER PK), name (TEXT), description (TEXT)
 
 Note: post_metrics may have multiple rows per post (scraped at different times). Use the latest row per post for current metrics.
 Weighted engagement formula: (comments*5 + reposts*3 + saves*3 + sends*3 + reactions*1) / impressions

@@ -71,6 +71,11 @@ export function createSubmitAnalysisTool(): Anthropic.Messages.Tool {
           items: {
             type: "object",
             properties: {
+              key: {
+                type: "string",
+                description:
+                  "A stable, short snake_case identifier for this recommendation (e.g. 'shift_to_image_format'). Used for cross-run matching.",
+              },
               type: { type: "string" },
               priority: { type: "number" },
               confidence: { type: "number" },
@@ -83,6 +88,7 @@ export function createSubmitAnalysisTool(): Anthropic.Messages.Tool {
               },
             },
             required: [
+              "key",
               "type",
               "priority",
               "confidence",
