@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import BetterSqlite3 from "better-sqlite3";
 import path from "path";
 import { AiLogger } from "./logger.js";
+import { MODELS } from "./client.js";
 import { runAnalysis } from "./analyzer.js";
 import type { AnalysisResult } from "./analyzer.js";
 import { discoverTaxonomy } from "./taxonomy.js";
@@ -188,30 +189,67 @@ export async function runPipeline(
       // Generate overview — find top performer
       const topPerformer = db
         .prepare(
-          `SELECT p.id, p.content_preview, pm.impressions,
-            (COALESCE(pm.comments,0)*5 + COALESCE(pm.reposts,0)*3 + COALESCE(pm.saves,0)*3 + COALESCE(pm.sends,0)*3 + COALESCE(pm.reactions,0)*1) as weighted_score
-          FROM posts p
-          JOIN post_metrics pm ON pm.post_id = p.id
-          JOIN (SELECT post_id, MAX(id) as max_id FROM post_metrics GROUP BY post_id) latest ON pm.id = latest.max_id
-          WHERE p.published_at >= datetime('now', '-30 days')
-          ORDER BY weighted_score DESC LIMIT 1`
+          `SELECT p.id, COALESCE(p.hook_text, SUBSTR(p.full_text, 1, 100), p.content_preview) as preview,
+                  p.published_at, p.url,
+                  pm.impressions, pm.reactions, pm.comments, pm.reposts,
+                  (COALESCE(pm.comments,0)*5 + COALESCE(pm.reposts,0)*3 + COALESCE(pm.saves,0)*3 + COALESCE(pm.sends,0)*3 + COALESCE(pm.reactions,0)*1) as weighted_score
+           FROM posts p
+           JOIN post_metrics pm ON pm.post_id = p.id
+           JOIN (SELECT post_id, MAX(id) as max_id FROM post_metrics GROUP BY post_id) latest ON pm.id = latest.max_id
+           WHERE p.published_at >= datetime('now', '-30 days')
+           ORDER BY weighted_score DESC LIMIT 1`
         )
         .get() as
         | {
             id: string;
-            content_preview: string | null;
+            preview: string | null;
+            published_at: string;
+            url: string | null;
             impressions: number;
+            reactions: number;
+            comments: number;
+            reposts: number;
             weighted_score: number;
           }
         | undefined;
+
+      let topPerformerReason: string | null = null;
+      if (topPerformer) {
+        try {
+          const reasonResponse = await client.messages.create({
+            model: MODELS.HAIKU,
+            max_tokens: 200,
+            system: "You write concise, plain-language explanations of why LinkedIn posts performed well. One sentence max.",
+            messages: [
+              {
+                role: "user",
+                content: `This LinkedIn post was the top performer in the last 30 days:
+Post topic: "${topPerformer.preview ?? "Unknown"}"
+Date: ${new Date(topPerformer.published_at).toLocaleDateString()}
+Impressions: ${topPerformer.impressions?.toLocaleString() ?? 0}
+Comments: ${topPerformer.comments ?? 0}
+Reactions: ${topPerformer.reactions ?? 0}
+
+In one sentence, explain why this post resonated with the audience.`,
+              },
+            ],
+          });
+          const reasonText = reasonResponse.content
+            .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+            .map((b) => b.text)
+            .join("");
+          topPerformerReason = `"${topPerformer.preview ?? "Post"}" (${new Date(topPerformer.published_at).toLocaleDateString()}) — ${reasonText}`;
+        } catch {
+          // Fallback to template if LLM call fails
+          topPerformerReason = `"${topPerformer.preview ?? "Post"}" (${new Date(topPerformer.published_at).toLocaleDateString()}) — ${topPerformer.impressions?.toLocaleString() ?? 0} impressions, ${topPerformer.comments ?? 0} comments, ${topPerformer.reactions ?? 0} reactions`;
+        }
+      }
 
       upsertOverview(db, {
         run_id: runId,
         summary_text: analysis.summary,
         top_performer_post_id: topPerformer?.id ?? null,
-        top_performer_reason: topPerformer
-          ? `Weighted engagement score: ${topPerformer.weighted_score}`
-          : null,
+        top_performer_reason: topPerformerReason,
         quick_insights: JSON.stringify(
           analysis.insights.slice(0, 5).map((i) => i.claim)
         ),

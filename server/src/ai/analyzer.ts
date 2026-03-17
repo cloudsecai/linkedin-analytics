@@ -13,7 +13,7 @@ import {
   createSubmitAnalysisTool,
   executeQueryDb,
 } from "./tools.js";
-import { getActiveInsights, getPostCountWithMetrics } from "../db/ai-queries.js";
+import { getActiveInsights, getPostCountWithMetrics, getRecentFeedbackWithReasons } from "../db/ai-queries.js";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -301,7 +301,15 @@ export async function runAnalysis(
   if (!stage2Result) return stage1Result;
 
   // Stage 3: Synthesis × 3 runs with self-consistency voting
-  const feedbackHistory = ""; // TODO: pull from recommendation feedback
+  const feedbackRows = getRecentFeedbackWithReasons(db);
+  const feedbackHistory = feedbackRows.length > 0
+    ? feedbackRows
+        .map((f) => {
+          const reason = f.reason ? ` because: "${f.reason}"` : "";
+          return `- The user found "${f.headline}" ${f.feedback === "useful" ? "useful" : "not useful"}${reason}`;
+        })
+        .join("\n")
+    : "No feedback history yet.";
   const stage3System = synthesisPrompt(stage2Result.summary, feedbackHistory);
 
   const synthesisRuns: RecommendationCandidate[][] = [];

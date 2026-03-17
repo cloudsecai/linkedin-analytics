@@ -507,3 +507,29 @@ export function getPostCountSinceRun(
     .get(runId) as { count: number };
   return row.count;
 }
+
+export function getRecentFeedbackWithReasons(
+  db: Database.Database
+): { headline: string; feedback: string; reason: string | null }[] {
+  const rows = db
+    .prepare(
+      `SELECT headline, feedback FROM recommendations
+       WHERE feedback IS NOT NULL
+       ORDER BY feedback_at DESC
+       LIMIT 20`
+    )
+    .all() as { headline: string; feedback: string }[];
+
+  return rows.map((row) => {
+    try {
+      const parsed = JSON.parse(row.feedback);
+      return {
+        headline: row.headline,
+        feedback: parsed.rating ?? row.feedback,
+        reason: parsed.reason ?? null,
+      };
+    } catch {
+      return { headline: row.headline, feedback: row.feedback, reason: null };
+    }
+  });
+}
