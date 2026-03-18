@@ -44,7 +44,7 @@ Available tables and columns for query_db:
 - **post_metrics**: id (INTEGER PK), post_id (TEXT FK→posts.id), scraped_at (DATETIME), impressions (INTEGER), members_reached (INTEGER), reactions (INTEGER), comments (INTEGER), reposts (INTEGER), saves (INTEGER), sends (INTEGER), video_views (INTEGER), watch_time_seconds (INTEGER), avg_watch_time_seconds (INTEGER)
 - **follower_snapshots**: date (DATE PK), total_followers (INTEGER)
 - **profile_snapshots**: date (DATE PK), profile_views (INTEGER), search_appearances (INTEGER), all_appearances (INTEGER)
-- **ai_tags**: post_id (TEXT PK), hook_type (TEXT), tone (TEXT), format_style (TEXT), post_category (TEXT — announcement|thought_leadership|question|personal_story|industry_news|how_to|opinion|case_study|other), tagged_at (DATETIME), model (TEXT)
+- **ai_tags**: post_id (TEXT PK), hook_type (TEXT), tone (TEXT), format_style (TEXT), post_category (TEXT — announcement|opinion|question|personal_story|industry_news|how_to|case_study|hot_take|other), tagged_at (DATETIME), model (TEXT)
 - **ai_post_topics**: post_id (TEXT FK→posts.id), taxonomy_id (INTEGER FK→ai_taxonomy.id)
 - **ai_taxonomy**: id (INTEGER PK), name (TEXT), description (TEXT)
 
@@ -133,17 +133,23 @@ ${LANGUAGE_RULES}`;
 }
 
 export function taxonomyPrompt(postSummaries: string): string {
-  return `You are a content taxonomy expert. Analyze the following LinkedIn post summaries and discover the natural topic categories.
+  return `You are a content taxonomy expert. Analyze the following LinkedIn post summaries and discover the natural TOPIC categories — what the posts are ABOUT, not their format or tone.
 
 ## Post Summaries
 ${postSummaries}
 
 ## Instructions
 Return a JSON array of topic objects. Each object should have:
-- "name": A short, clear category name (2-4 words)
+- "name": A short, clear topic name (2-4 words)
 - "description": A one-sentence description of what posts in this category cover
 
-Aim for 5-15 categories that meaningfully distinguish the content. Categories should be specific enough to be useful but broad enough to contain multiple posts. Return ONLY the JSON array, no other text.`;
+## Rules
+- Topics should reflect the SUBJECT MATTER of the posts, not the format (no "opinion pieces" or "thought leadership")
+- Topics should be specific enough to distinguish content but broad enough that 3+ posts fit each one
+- A good test: if you told someone the topic name, could they predict what the post is about?
+- BAD topics: "Startup Advice" (too broad), "Venture Capital Insights" (vague), "Industry Trends" (generic)
+- GOOD topics: "AI Security", "Hiring & Team Building", "Product Launches", "Conference Talks", "Vendor Evaluation"
+- Aim for 5-12 categories. Return ONLY the JSON array, no other text.`;
 }
 
 export function taggingPrompt(
@@ -165,15 +171,15 @@ For each post, return a JSON array of objects with:
 - "hook_type": The type of hook used (e.g., "question", "statistic", "story", "bold_claim", "how_to", "list", "contrarian", "personal", "other")
 - "tone": The overall tone (e.g., "professional", "conversational", "inspirational", "educational", "humorous", "provocative")
 - "format_style": The format style (e.g., "short_text", "long_form", "listicle", "story", "tips", "case_study", "poll", "carousel", "video")
-- "post_category": The primary category of the post. Must be exactly one of: "announcement", "thought_leadership", "question", "personal_story", "industry_news", "how_to", "opinion", "case_study", "other"
+- "post_category": The primary category of the post. Must be exactly one of: "announcement", "opinion", "question", "personal_story", "industry_news", "how_to", "case_study", "hot_take", "other"
   - "announcement": Posts announcing personal news — new role, company launch, paper published, award received, event attendance, milestone reached. These are engagement-inflated and should be excluded from performance benchmarks.
-  - "thought_leadership": Original insights, frameworks, or perspectives on industry topics
+  - "opinion": The author shares their perspective, insight, or framework on a topic. This is the most common category — if the author is expressing a view about something, it's an opinion.
   - "question": Posts primarily asking the audience a question to drive discussion
-  - "personal_story": Narrative-driven posts sharing personal experiences or lessons
-  - "industry_news": Commentary on external news, trends, or events
-  - "how_to": Tactical, instructional content with steps or tips
-  - "opinion": Strong takes or contrarian views on a topic
-  - "case_study": Detailed analysis of a specific example or result
+  - "personal_story": Narrative-driven posts sharing personal experiences, lessons learned, or reflections on the author's journey
+  - "industry_news": Commentary on external news, trends, reports, or events — the post is primarily ABOUT something that happened externally
+  - "how_to": Tactical, instructional content with steps, tips, or actionable advice
+  - "case_study": Detailed analysis of a specific example, product, incident, or result
+  - "hot_take": Short, punchy, contrarian or provocative statement designed to spark engagement — usually under 50 words
   - "other": Posts that don't fit the above categories
 
 Return ONLY the JSON array, no other text.`;
