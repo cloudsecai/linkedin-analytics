@@ -21,9 +21,12 @@ import { z } from "zod";
 
 /**
  * Content script entry point.
- * Runs on linkedin.com/analytics/* pages. When the service worker sends a
- * "scrape-page" command, this script detects the current URL, waits for
+ * Runs on linkedin.com/analytics/* and /feed/* pages. When the service worker
+ * sends a "scrape-page" command, this script detects the current URL, waits for
  * key selectors to render, scrapes the data, validates with Zod, and relays it back.
+ *
+ * On video post pages, also auto-sends the video URL to the server so we don't
+ * need a full backfill cycle just to capture it.
  */
 
 // Listen for scrape commands from the service worker
@@ -41,6 +44,32 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true; // keep message channel open for async response
   }
 });
+
+// Auto-detect video URLs on post pages (fire-and-forget, no backfill needed)
+if (location.href.includes("/feed/update/urn:li:activity:")) {
+  const postIdMatch = location.href.match(/activity:(\d+)/);
+  if (postIdMatch) {
+    // Wait a moment for video elements to load
+    setTimeout(() => {
+      const videoEl = document.querySelector(
+        'video source[src*="dms.licdn.com"], video source[type="video/mp4"], video[src*="dms.licdn.com"]'
+      );
+      const videoUrl = videoEl?.getAttribute("src");
+      if (videoUrl && postIdMatch[1]) {
+        fetch("http://localhost:3210/api/ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            posts: [{
+              id: postIdMatch[1],
+              video_url: videoUrl,
+            }],
+          }),
+        }).catch(() => {});
+      }
+    }, 2000);
+  }
+}
 
 async function requireSelector(
   selector: string,
