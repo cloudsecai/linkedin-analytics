@@ -46,7 +46,7 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-50 bg-surface-0 border-b border-border px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-8">
           <h1 className="text-lg font-semibold tracking-tight">
             <span className="text-accent">LI</span> Analytics
