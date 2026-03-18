@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LinkedIn Analytics Collector",
+  "name": "Linkling",
   "version": "0.1.0",
-  "description": "Collects your LinkedIn post analytics and stores them locally",
+  "description": "Local-first LinkedIn analytics and AI coaching",
   "permissions": ["alarms", "cookies", "scripting", "storage", "tabs", "webNavigation", "webRequest"],
   "host_permissions": ["*://*.linkedin.com/*", "*://*.licdn.com/*", "http://localhost:3210/*"],
   "background": {

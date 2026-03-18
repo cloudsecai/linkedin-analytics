@@ -56,7 +56,7 @@ export default function App() {
       <header className="sticky top-0 z-50 bg-surface-0 border-b border-border px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-8">
           <h1 className="text-lg font-semibold tracking-tight">
-            <span className="text-accent">LI</span> Analytics
+            <span className="text-accent">Link</span>ling
           </h1>
           <nav className="flex gap-1">
             {tabs.map((t) => (

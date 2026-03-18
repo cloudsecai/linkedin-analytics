@@ -1,8 +1,8 @@
-# LinkedIn Analytics
+# Linkling
 
 Your LinkedIn data is trapped behind a dashboard you don't own.
 
-This gets it out. A Chrome extension collects your post metrics automatically, stores everything locally in SQLite, and runs an AI coach that tells you what's working and what to write next.
+Linkling gets it out. A Chrome extension collects your post metrics automatically, stores everything locally in SQLite, and runs an AI coach that tells you what's working and what to write next.
 
 No SaaS. No data sharing. Runs on your machine.
 
