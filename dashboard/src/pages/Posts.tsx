@@ -71,7 +71,6 @@ function ContentTypeIcon({ type }: { type: string }) {
 export default function Posts() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
   const [contentType, setContentType] = useState("all");
   const [sortBy, setSortBy] = useState("published_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
@@ -90,8 +89,8 @@ export default function Posts() {
     const params: Record<string, string | number> = {
       sort_by: sortBy,
       sort_order: sortOrder,
-      offset,
-      limit: 20,
+      offset: 0,
+      limit: 500,
     };
     if (contentType !== "all") params.content_type = contentType;
     api
@@ -101,7 +100,7 @@ export default function Posts() {
         setTotal(r.total);
       })
       .catch(() => {});
-  }, [contentType, sortBy, sortOrder, offset]);
+  }, [contentType, sortBy, sortOrder]);
 
   useEffect(() => {
     if (selected) {
@@ -152,35 +151,35 @@ export default function Posts() {
           Content pending for {backfillCount} post{backfillCount !== 1 ? "s" : ""} — open LinkedIn with the extension active to backfill.
         </div>
       )}
-      <div className="flex items-center justify-end flex-wrap gap-3">
-        <div className="flex gap-2">
-          <select
-            value={contentType}
-            onChange={(e) => { setContentType(e.target.value); setOffset(0); }}
-            className="bg-surface-2 border border-border rounded px-2.5 py-1.5 text-sm text-text-primary"
-          >
-            {contentTypes.map((t) => (
-              <option key={t} value={t}>
-                {t === "all" ? "All types" : t}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
 
       {/* Table */}
-      <div className="bg-surface-1 border border-border rounded-lg overflow-hidden">
+      <div className="bg-surface-1 border border-border rounded-lg">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border text-text-muted text-xs uppercase tracking-wider">
-              <th className="text-left px-4 py-3 font-medium sticky top-[57px] bg-surface-1 z-10 after:absolute after:bottom-0 after:left-0 after:right-0 after:border-b after:border-border">Post</th>
-              <th className="text-left px-3 py-3 font-medium w-28 sticky top-[57px] bg-surface-1 z-10">Category</th>
-              <th className="text-left px-3 py-3 font-medium w-36 sticky top-[57px] bg-surface-1 z-10">Topics</th>
+            <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
+              <th className="text-left px-4 py-3 font-medium sticky top-[57px] bg-surface-1 z-10 border-b border-border">
+                <div className="flex items-center gap-3">
+                  Post
+                  <select
+                    value={contentType}
+                    onChange={(e) => { setContentType(e.target.value); }}
+                    className="bg-surface-2 border border-border rounded px-1.5 py-0.5 text-[11px] text-text-primary normal-case tracking-normal"
+                  >
+                    {contentTypes.map((t) => (
+                      <option key={t} value={t}>
+                        {t === "all" ? "All types" : t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </th>
+              <th className="text-left px-3 py-3 font-medium w-28 sticky top-[57px] bg-surface-1 z-10 border-b border-border">Category</th>
+              <th className="text-left px-3 py-3 font-medium w-36 sticky top-[57px] bg-surface-1 z-10 border-b border-border">Topics</th>
               {sortOptions.map((s) => (
                 <th
                   key={s.value}
                   onClick={() => toggleSort(s.value)}
-                  className="text-right px-4 py-3 font-medium cursor-pointer hover:text-text-primary w-28 sticky top-[57px] bg-surface-1 z-10"
+                  className="text-right px-4 py-3 font-medium cursor-pointer hover:text-text-primary w-28 sticky top-[57px] bg-surface-1 z-10 border-b border-border"
                 >
                   {s.label}
                   {sortIndicator(s.value)}
@@ -399,30 +398,10 @@ export default function Posts() {
         </table>
       </div>
 
-      {/* Pagination */}
-      {total > 20 && (
-        <div className="flex items-center justify-between text-sm text-text-secondary">
-          <span>
-            Showing {offset + 1}-{Math.min(offset + 20, total)} of {total}
-          </span>
-          <div className="flex gap-2">
-            <button
-              disabled={offset === 0}
-              onClick={() => setOffset(Math.max(0, offset - 20))}
-              className="px-3 py-1 rounded bg-surface-2 border border-border disabled:opacity-40"
-            >
-              Prev
-            </button>
-            <button
-              disabled={offset + 20 >= total}
-              onClick={() => setOffset(offset + 20)}
-              className="px-3 py-1 rounded bg-surface-2 border border-border disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Post count */}
+      <div className="text-xs text-text-muted text-right">
+        {total} post{total !== 1 ? "s" : ""}
+      </div>
     </div>
   );
 }
