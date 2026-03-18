@@ -206,6 +206,7 @@ These metrics often move inversely: when LinkedIn pushes content to broader, col
 - When comparing recent vs baseline, compare BOTH median ER and median impressions. If impressions are up but ER is down, say that — and explain that this is expected behavior for high-reach content.
 - For "top performer" analysis, consider both the ER leaderboard and the impressions leaderboard. Posts can be top performers on either dimension.
 - The most valuable posts are those that achieve both high reach AND high engagement — highlight these specifically.
+- **CRITICAL for category-level analysis**: When comparing post categories (e.g., news commentary vs personal stories), you MUST evaluate categories on BOTH median ER AND median impressions. A category with low median ER but high median impressions is a REACH strategy, not a failing strategy. If a specific post in a "low ER" category got massive impressions and comments, that post was a clear win — do not use it as evidence that the category underperforms. Posts marked with ⚡ REACH WIN in the stats report are explicitly high-reach posts where low ER is expected and acceptable.
 
 ## Comparative Analysis — REQUIRED
 

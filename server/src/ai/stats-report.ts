@@ -350,7 +350,26 @@ function buildTopBottomSection(posts: PostWithER[], timezone: string): string {
   if (bottomER.length === 0) {
     lines.push("No data.");
   } else {
-    for (const p of bottomER) lines.push(formatPostLine(p, timezone));
+    // Annotate posts that are high-reach but low-ER
+    const topImprSet = new Set(topImpr.map((p) => p.id));
+    for (const p of bottomER) {
+      const line = formatPostLine(p, timezone);
+      if (topImprSet.has(p.id)) {
+        lines.push(line + " ⚡ REACH WIN — this post is also in the Top 10 by impressions. Low ER here is expected: high-reach posts get shown to colder audiences who are less likely to engage.");
+      } else {
+        lines.push(line);
+      }
+    }
+  }
+
+  // Bottom by impressions (actual underperformers)
+  const sortedByImprAsc = [...posts].sort((a, b) => a.impressions - b.impressions);
+  const bottomImpr = sortedByImprAsc.slice(0, 10);
+  lines.push("", "## 6b. Bottom 10 Posts (by impressions — lowest reach)");
+  if (bottomImpr.length === 0) {
+    lines.push("No data.");
+  } else {
+    for (const p of bottomImpr) lines.push(formatPostLine(p, timezone));
   }
 
   return lines.join("\n");
