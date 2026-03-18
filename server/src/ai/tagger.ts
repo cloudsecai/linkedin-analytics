@@ -97,8 +97,12 @@ export async function tagPosts(
     });
 
     const tags = parseTaggingResponse(outputText);
+    const validPostIds = new Set(batch.map((p) => p.id));
 
     for (const tag of tags) {
+      // Skip hallucinated post IDs that weren't in the batch
+      if (!validPostIds.has(tag.post_id)) continue;
+
       upsertAiTag(db, {
         post_id: tag.post_id,
         hook_type: tag.hook_type,
