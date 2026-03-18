@@ -11,12 +11,19 @@ const tabs = ["Overview", "Posts", "Coach", "Timing", "Followers", "Settings"] a
 type Tab = (typeof tabs)[number];
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>(() => {
+    const hash = window.location.hash.slice(1) as Tab;
+    return tabs.includes(hash) ? hash : "Overview";
+  });
   const [health, setHealth] = useState<HealthData | null>(null);
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    window.location.hash = tab;
+  }, [tab]);
 
   useEffect(() => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
