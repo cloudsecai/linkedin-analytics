@@ -1,8 +1,29 @@
 # LinkedIn Analytics
 
-A local-first LinkedIn analytics platform. A Chrome extension collects your post performance data via DOM scraping, stores it in a local SQLite database, and serves a dashboard with charts, insights, and AI-powered coaching.
+LinkedIn's built-in analytics are surface-level: impressions, a handful of reactions, and a chart that resets every 365 days. If you're serious about growing on LinkedIn, you need to understand *what's actually working* — which topics drive engagement, how your content performs over time, and what to write next. But the only tools available are either expensive SaaS platforms that harvest your data or spreadsheets you have to maintain manually.
 
-No subscriptions. No third-party data sharing. Your data stays on your machine.
+This is a local-first analytics and coaching platform for LinkedIn creators. A Chrome extension silently collects your post performance data, a local server stores everything in SQLite on your machine, and an AI coach analyzes your patterns to tell you what's working, what isn't, and what to try next.
+
+No subscriptions. No third-party data sharing. Your data never leaves your machine.
+
+## What it does
+
+**Collects everything LinkedIn shows you, automatically.** The extension runs in the background and captures post impressions, reactions, comments, reposts, follower growth, profile views, and search appearances. Video posts are automatically transcribed locally using whisper.cpp so their content is searchable and analyzable alongside text posts.
+
+**Builds a real content history.** LinkedIn only shows you the last year of posts with limited filtering. This stores every post with full text, images, content type classification, and complete metric history — giving you a dataset that gets more valuable over time.
+
+**Analyzes what's actually driving your engagement.** The AI coach doesn't just tell you your numbers went up. It discovers your content taxonomy (the topics you actually write about), tracks which topics and formats perform best, identifies trends across your posting history, and generates specific recommendations with evidence. Insights persist across analysis runs — the system tracks which patterns are strengthening, reversing, or fading.
+
+**Helps you write better posts.** A writing prompt system lets you define your voice and goals, then exports a ready-to-use prompt with your top-performing posts as a style guide. The AI suggests prompt improvements based on what's actually working in your data.
+
+## Dashboard
+
+- **Overview** — KPI summary with period-over-period comparisons, top performer highlight, and quick insights
+- **Posts** — Full post history with sortable metrics, content type filtering, and engagement rate calculations
+- **Coach** — AI-generated recommendations with priority/confidence ratings, persistent insights with trend tracking, deep-dive analytics (category performance, engagement quality, timing analysis)
+- **Timing** — Heatmap of when your posts get the most engagement, broken down by day and hour
+- **Followers** — Growth tracking over time
+- **Settings** — Writing prompt editor with revision history, author photo for image classification, timezone configuration
 
 ## Architecture
 
@@ -15,6 +36,10 @@ SQLite Database (data/linkedin.db)
     ↓ serves
 React Dashboard (Tailwind CSS + Chart.js)
 ```
+
+The extension uses `webRequest` to passively capture video streaming URLs, DOM scraping for post content and metrics, and background tabs for automated collection. Sync state is stored server-side so reinstalling the extension doesn't lose progress.
+
+The AI pipeline runs locally through OpenRouter (Claude Haiku for taxonomy and tagging, Sonnet for analysis, Haiku for summaries) and can be triggered automatically after data collection or manually from the dashboard.
 
 ## Prerequisites
 
@@ -90,7 +115,25 @@ The AI Coach analyzes your posting patterns and generates actionable recommendat
 3. Restart the server
 4. Go to the **Coach** tab in the dashboard and click **Refresh AI**
 
-The AI pipeline classifies your posts by content type, identifies patterns in your engagement data, and generates recommendations with specific next actions.
+The AI pipeline discovers your content taxonomy, classifies posts by topic and format, identifies engagement patterns, and generates prioritized recommendations with evidence. It tracks insights across runs so you can see which patterns are strengthening or fading over time.
+
+## Video Transcription (Optional)
+
+Video posts are automatically transcribed using local whisper.cpp — no external API calls, no data leaving your machine. The extension captures LinkedIn's DASH streaming URLs via network interception, and the server downloads and transcribes locally.
+
+Setup:
+```bash
+brew install ffmpeg whisper-cpp
+```
+
+Download the whisper model (~148MB, one-time):
+```bash
+mkdir -p data/models
+curl -L -o data/models/ggml-base.en.bin \
+  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+```
+
+Transcription runs automatically on server startup and when new video posts are ingested.
 
 ## Development
 
@@ -110,7 +153,7 @@ npm test
 ```
 ├── server/           # Fastify API server
 │   ├── src/
-│   │   ├── ai/       # AI analysis pipeline (OpenRouter), video transcription (whisper.cpp)
+│   │   ├── ai/       # AI analysis pipeline, video transcription
 │   │   ├── db/       # SQLite schema, migrations, queries
 │   │   ├── routes/   # API endpoints
 │   │   └── index.ts  # Server entrypoint
@@ -123,43 +166,10 @@ npm test
 │   └── package.json
 ├── extension/        # Chrome extension (Manifest V3)
 │   ├── src/
-│   │   ├── background/  # Service worker with alarm scheduling
+│   │   ├── background/  # Service worker with sync orchestration
 │   │   ├── content/     # DOM scraper for LinkedIn analytics
 │   │   └── popup/       # Extension popup UI
 │   └── manifest.json
-├── data/             # SQLite database (gitignored)
+├── data/             # SQLite database + models (gitignored)
 └── docs/             # Design specs and research
 ```
-
-## Backfilling Post Content
-
-After the initial sync, some posts may show "Content pending" — this means the extension has captured their metrics but hasn't scraped the full text and images yet. To backfill:
-
-1. Keep the server running
-2. Browse LinkedIn normally with the extension active
-3. The extension will automatically backfill post content as you visit LinkedIn
-
-You can check the backfill status on the **Posts** page — a banner will show how many posts still need content.
-
-## Video Transcription
-
-Video posts are automatically transcribed using local whisper.cpp (no external API needed). When the extension scrapes a video post page, it captures the video URL. The server then:
-
-1. Downloads the video file
-2. Extracts audio with ffmpeg (16kHz WAV)
-3. Transcribes using whisper-cli with the `base.en` model
-4. Stores the transcript as the post's `full_text`
-
-Setup:
-```bash
-brew install ffmpeg whisper-cpp
-```
-
-The whisper model (~148MB) needs to be downloaded once:
-```bash
-mkdir -p data/models
-curl -L -o data/models/ggml-base.en.bin \
-  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
-```
-
-Transcription runs automatically on server startup and when video posts are ingested.
