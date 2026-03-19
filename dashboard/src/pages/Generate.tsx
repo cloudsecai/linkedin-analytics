@@ -5,6 +5,7 @@ import DraftVariations from "./generate/DraftVariations";
 import ReviewEdit from "./generate/ReviewEdit";
 import Rules from "./generate/Rules";
 import GenerationHistory from "./generate/GenerationHistory";
+import CoachingSyncModal from "./generate/CoachingSyncModal";
 import type {
   GenStory,
   GenDraft,
@@ -49,6 +50,7 @@ export default function Generate() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [gen, setGen] = useState<GenerationState>(initialState);
   const [loading, setLoading] = useState(false);
+  const [showCoachingSync, setShowCoachingSync] = useState(false);
 
   const resetPipeline = () => {
     setGen(initialState);
@@ -57,7 +59,15 @@ export default function Generate() {
 
   return (
     <div>
-      <SubTabBar active={subTab} onChange={setSubTab} />
+      <div className="flex items-center justify-between">
+        <SubTabBar active={subTab} onChange={setSubTab} />
+        <button
+          onClick={() => setShowCoachingSync(true)}
+          className="text-[12px] text-gen-text-3 hover:text-gen-accent transition-colors cursor-pointer"
+        >
+          Coaching sync
+        </button>
+      </div>
 
       <div className="mt-6">
         {subTab === "Generate" && step === 1 && (
@@ -95,6 +105,10 @@ export default function Generate() {
           setSubTab("Generate");
         }} />}
       </div>
+
+      {showCoachingSync && (
+        <CoachingSyncModal onClose={() => setShowCoachingSync(false)} />
+      )}
     </div>
   );
 }
