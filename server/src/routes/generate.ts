@@ -173,6 +173,11 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
       return reply.status(400).send({ error: "No drafts available" });
     }
 
+    const invalidIndex = selected_drafts.find((i) => i < 0 || i >= drafts.length);
+    if (invalidIndex !== undefined) {
+      return reply.status(400).send({ error: `Invalid draft index: ${invalidIndex}` });
+    }
+
     const client = getClient();
     const runId = createRun(db, "generate_combine", 0);
     const logger = new AiLogger(db, runId);
@@ -233,6 +238,11 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
       action: "regenerate" | "shorten" | "strengthen_close" | "custom";
       instruction?: string;
     };
+
+    const validActions = ["regenerate", "shorten", "strengthen_close", "custom"];
+    if (!validActions.includes(action)) {
+      return reply.status(400).send({ error: "action must be one of: regenerate, shorten, strengthen_close, custom" });
+    }
 
     const gen = getGeneration(db, generation_id);
     if (!gen?.final_draft) {
