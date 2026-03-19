@@ -86,7 +86,7 @@ async function scrapeCurrent(): Promise<ContentMessage> {
     return { type: "post-content", data };
   }
 
-  if (url.includes("/analytics/creator/top-posts")) {
+  if (url.includes("/analytics/creator/top-posts") || url.includes("/analytics/creator/content")) {
     await requireSelector(
       ".member-analytics-addon__mini-update-item",
       "top-posts"

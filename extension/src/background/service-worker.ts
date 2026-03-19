@@ -194,8 +194,8 @@ async function startSync() {
     const tab = await chrome.tabs.create({
       active: false,
       url: isBackfill
-        ? "https://www.linkedin.com/analytics/creator/top-posts?timeRange=past_365_days&metricType=IMPRESSIONS"
-        : "https://www.linkedin.com/analytics/creator/top-posts?timeRange=past_30_days&metricType=IMPRESSIONS",
+        ? "https://www.linkedin.com/analytics/creator/content?timeRange=past_365_days&metricType=IMPRESSIONS"
+        : "https://www.linkedin.com/analytics/creator/content?metricType=IMPRESSIONS&timeRange=past_28_days",
     });
 
     if (!tab.id) throw new Error("Failed to create background tab");
