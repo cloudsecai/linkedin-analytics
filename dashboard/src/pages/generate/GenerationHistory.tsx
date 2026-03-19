@@ -152,7 +152,7 @@ export default function GenerationHistory({ onOpen }: GenerationHistoryProps) {
             }}
             className="text-[13px] text-gen-text-3 hover:text-gen-text-1 transition-colors"
           >
-            Showing {items.length} of {total} generations - Load more
+            Showing {items.length} of {total} generations · Load more
           </button>
         </div>
       )}
