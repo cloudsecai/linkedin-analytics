@@ -139,4 +139,17 @@ export function registerSettingsRoutes(
 
     return { ok: true };
   });
+
+  // ── Sync health ──────────────────────────────────────────
+
+  app.get("/api/settings/sync-health", async () => {
+    const warning = getSetting(db, "sync_warning");
+    const staleWarning = getSetting(db, "sync_stale_warning");
+    return {
+      warnings: [
+        ...(warning ? [JSON.parse(warning)] : []),
+        ...(staleWarning ? [JSON.parse(staleWarning)] : []),
+      ],
+    };
+  });
 }

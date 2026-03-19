@@ -342,4 +342,8 @@ export const api = {
   // Run history
   getAiRuns: () =>
     get<{ runs: AiRun[]; total_cost_cents: number }>("/insights/runs"),
+
+  // Sync health
+  getSyncHealth: () =>
+    get<{ warnings: Array<{ message: string; detected_at: string }> }>("/settings/sync-health"),
 };

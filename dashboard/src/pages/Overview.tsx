@@ -33,6 +33,11 @@ export default function Overview() {
   const [prevOverview, setPrevOverview] = useState<OverviewData | null>(null);
   const [aiOverview, setAiOverview] = useState<AiOverview | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncWarnings, setSyncWarnings] = useState<Array<{ message: string }>>([]);
+
+  useEffect(() => {
+    api.getSyncHealth().then(r => setSyncWarnings(r.warnings)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const params = daysToDateRange(range);
@@ -95,6 +100,12 @@ export default function Overview() {
 
   return (
     <div className="space-y-6">
+      {syncWarnings.length > 0 && (
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 text-sm text-yellow-200">
+          <span className="font-medium">Sync issue detected:</span>{" "}
+          {syncWarnings[0].message}
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Overview</h2>
         <div className="flex items-center gap-3">
