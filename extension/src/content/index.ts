@@ -55,9 +55,24 @@ async function requireSelector(
 ): Promise<void> {
   const el = await waitForSelector(selector);
   if (!el) {
+    // Gather diagnostic info about what IS on the page
+    const bodyClasses = document.body.className;
+    const mainSelectors = [
+      ".member-analytics-addon__mini-update-item",
+      ".member-analytics-addon-card__base-card",
+      ".member-analytics-addon-summary__list-item",
+      ".artdeco-card",
+      "[data-test-id]",
+    ];
+    const found = mainSelectors
+      .filter((s) => document.querySelector(s))
+      .join(", ");
+
     throw new Error(
-      `[${pageName}] Expected selector "${selector}" not found within timeout. ` +
-        `LinkedIn may have changed their page structure.`
+      `[${pageName}] Expected selector "${selector}" not found. ` +
+        `LinkedIn may have changed their page structure. ` +
+        `Page has: ${found || "no known selectors"}. ` +
+        `Body classes: ${bodyClasses.slice(0, 200)}`
     );
   }
 }
