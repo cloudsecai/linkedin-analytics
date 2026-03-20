@@ -10,41 +10,38 @@ import {
   api,
   type GenStory,
   type GenDraft,
-  type GenQualityGate,
   type GenCoachingInsight,
+  type DiscoveryCategory,
+  type GenCoachCheckQuality,
 } from "../api/client";
 
-export type PostType = "news" | "topic" | "insight";
-
-export interface TypeCache {
-  stories: GenStory[];
-  researchId: number | null;
-  articleCount: number;
-  sourceCount: number;
-}
-
 interface GenerationState {
-  postType: PostType;
-  cache: Record<PostType, TypeCache | null>;
-  // Top-level convenience fields — synced from active cache entry
+  // Discovery
+  discoveryTopics: DiscoveryCategory[] | null;
+  selectedTopic: string | null;
+  // Research
   researchId: number | null;
   stories: GenStory[];
   articleCount: number;
   sourceCount: number;
   selectedStoryIndex: number | null;
+  // Generation
   generationId: number | null;
   drafts: GenDraft[];
   selectedDraftIndices: number[];
   combiningGuidance: string;
-  finalDraft: string;
-  qualityGate: GenQualityGate | null;
-  appliedInsights: GenCoachingInsight[];
   personalConnection: string;
+  // Review
+  finalDraft: string;
+  qualityGate: GenCoachCheckQuality | null;
+  appliedInsights: GenCoachingInsight[];
+  // Chat
+  chatMessages: Array<{ role: "user" | "assistant"; content: string }>;
 }
 
 const initialState: GenerationState = {
-  postType: "news",
-  cache: { news: null, topic: null, insight: null },
+  discoveryTopics: null,
+  selectedTopic: null,
   researchId: null,
   stories: [],
   articleCount: 0,
@@ -54,10 +51,11 @@ const initialState: GenerationState = {
   drafts: [],
   selectedDraftIndices: [],
   combiningGuidance: "",
+  personalConnection: "",
   finalDraft: "",
   qualityGate: null,
   appliedInsights: [],
-  personalConnection: "",
+  chatMessages: [],
 };
 
 export default function Generate() {
@@ -75,7 +73,12 @@ export default function Generate() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <SubTabBar active={subTab} onChange={setSubTab} />
+        <SubTabBar active={subTab} onChange={(tab) => {
+          setSubTab(tab);
+          if (tab !== "Generate") {
+            setGen((prev) => ({ ...prev, discoveryTopics: null }));
+          }
+        }} />
         <button
           onClick={() => setShowCoachingSync(true)}
           className="text-[12px] text-gen-text-3 hover:text-gen-accent transition-colors cursor-pointer"
@@ -120,11 +123,21 @@ export default function Generate() {
             const data = await api.generateHistoryDetail(id);
             const drafts: GenDraft[] = data.drafts_json ? JSON.parse(data.drafts_json) : [];
             const selectedIndices: number[] = data.selected_draft_indices ? JSON.parse(data.selected_draft_indices) : [];
-            const qualityGate: GenQualityGate | null = data.quality_gate_json ? JSON.parse(data.quality_gate_json) : null;
-            const postType = (data.post_type || "news") as PostType;
+            const qualityGate: GenCoachCheckQuality | null = data.quality_gate_json ? JSON.parse(data.quality_gate_json) : null;
+
+            // Load chat messages for this generation
+            let chatMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+            if (data.id && data.final_draft) {
+              try {
+                const msgs = await api.generateChatHistory(data.id);
+                chatMessages = msgs.map((m: any) => ({ role: m.role, content: m.display_content ?? m.content }));
+              } catch {
+                // Chat history is non-critical — proceed without it
+              }
+            }
+
             setGen({
               ...initialState,
-              postType,
               researchId: data.research_id,
               stories: data.stories ?? [],
               articleCount: data.article_count ?? 0,
@@ -137,7 +150,7 @@ export default function Generate() {
               finalDraft: data.final_draft ?? "",
               qualityGate,
               personalConnection: data.personal_connection ?? "",
-              cache: { ...initialState.cache, [postType]: { stories: data.stories ?? [], researchId: data.research_id, articleCount: data.article_count ?? 0, sourceCount: data.source_count ?? 0 } },
+              chatMessages,
             });
             // Jump to the right step based on what data exists
             if (data.final_draft) {

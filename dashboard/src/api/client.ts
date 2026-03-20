@@ -265,9 +265,55 @@ export interface GenDraftsResponse {
   drafts: GenDraft[];
 }
 
+export interface DiscoveryTopic {
+  label: string;
+  source_headline: string;
+  source_url: string;
+}
+
+export interface DiscoveryCategory {
+  name: string;
+  topics: DiscoveryTopic[];
+}
+
+export interface DiscoveryResponse {
+  categories: DiscoveryCategory[];
+}
+
+// New quality shape from coach-check
+export interface GenExpertiseItem {
+  area: string;
+  question: string;
+}
+
+export interface GenAlignmentItem {
+  dimension: string;
+  summary: string;
+}
+
+export interface GenCoachCheckQuality {
+  expertise_needed: GenExpertiseItem[];
+  alignment: GenAlignmentItem[];
+}
+
+export interface GenChatResponse {
+  draft: string;
+  quality: GenCoachCheckQuality;
+  explanation: string;
+}
+
+export interface GenChatMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  display_content: string;
+  draft_snapshot?: string;
+  quality_json?: string;
+}
+
 export interface GenCombineResponse {
   final_draft: string;
-  quality_gate: GenQualityGate;
+  quality: GenCoachCheckQuality;
 }
 
 export interface GenReviseResponse {
@@ -519,13 +565,18 @@ export const api = {
 
   // ── Generate Pipeline ─────────────────────────────────────
 
-  generateResearch: (postType: string, topic?: string, avoid?: string[]) =>
+  generateDiscover: () =>
+    fetch(`${BASE_URL}/generate/discover`, { method: "POST" }).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json() as Promise<DiscoveryResponse>;
+    }),
+
+  generateResearch: (topic: string, avoid?: string[]) =>
     fetch(`${BASE_URL}/generate/research`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        post_type: postType,
-        ...(topic && { topic }),
+        topic,
         ...(avoid && avoid.length > 0 && { avoid }),
       }),
     }).then((r) => {
@@ -533,19 +584,34 @@ export const api = {
       return r.json() as Promise<GenResearchResponse>;
     }),
 
-  generateDrafts: (researchId: number, storyIndex: number, postType: string, personalConnection?: string) =>
+  generateDrafts: (researchId: number, storyIndex: number, personalConnection?: string) =>
     fetch(`${BASE_URL}/generate/drafts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         research_id: researchId,
         story_index: storyIndex,
-        post_type: postType,
         personal_connection: personalConnection,
       }),
     }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json() as Promise<GenDraftsResponse>;
+    }),
+
+  generateChat: (generationId: number, message: string, editedDraft?: string) =>
+    fetch(`${BASE_URL}/generate/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ generation_id: generationId, message, edited_draft: editedDraft }),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json() as Promise<GenChatResponse>;
+    }),
+
+  generateChatHistory: (generationId: number) =>
+    fetch(`${BASE_URL}/generate/${generationId}/messages`).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json() as Promise<GenChatMessage[]>;
     }),
 
   generateCombine: (generationId: number, selectedDrafts: number[], combiningGuidance?: string) =>
@@ -556,16 +622,6 @@ export const api = {
     }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json() as Promise<GenCombineResponse>;
-    }),
-
-  generateRevise: (generationId: number, action: string, instruction?: string, editedDraft?: string) =>
-    fetch(`${BASE_URL}/generate/revise`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ generation_id: generationId, action, instruction, edited_draft: editedDraft }),
-    }).then((r) => {
-      if (!r.ok) throw new Error(`API error: ${r.status}`);
-      return r.json() as Promise<GenReviseResponse>;
     }),
 
   // ── Generate Rules ────────────────────────────────────────
