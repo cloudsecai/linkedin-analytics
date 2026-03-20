@@ -4,6 +4,7 @@ import DiscoveryView from "./generate/DiscoveryView";
 import DraftVariations from "./generate/DraftVariations";
 import ReviewEdit from "./generate/ReviewEdit";
 import Rules from "./generate/Rules";
+import Sources from "./generate/Sources";
 import GenerationHistory from "./generate/GenerationHistory";
 import CoachingSyncModal from "./generate/CoachingSyncModal";
 import {
@@ -118,6 +119,7 @@ export default function Generate() {
           />
         )}
         {subTab === "Rules" && <Rules />}
+        {subTab === "Sources" && <Sources />}
         {subTab === "Generation History" && <GenerationHistory onOpen={async (id) => {
           try {
             const data = await api.generateHistoryDetail(id);

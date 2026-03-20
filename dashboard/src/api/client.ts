@@ -668,4 +668,43 @@ export const api = {
 
   generateCoachingInsights: () =>
     get<{ insights: GenCoachingInsight[] }>("/generate/coaching/insights"),
+
+  // Sources
+  getSources: () =>
+    get<{ sources: GenSource[] }>("/sources"),
+
+  addSource: (url: string) =>
+    fetch(`${BASE_URL}/sources`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    }).then(async (r) => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error ?? `API error: ${r.status}`);
+      return data as { source: GenSource };
+    }),
+
+  updateSource: (id: number, updates: { enabled?: boolean; name?: string }) =>
+    fetch(`${BASE_URL}/sources/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json();
+    }),
+
+  deleteSource: (id: number) =>
+    fetch(`${BASE_URL}/sources/${id}`, { method: "DELETE" }).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json();
+    }),
 };
+
+export interface GenSource {
+  id: number;
+  name: string;
+  feed_url: string;
+  enabled: number;
+  created_at?: string;
+}

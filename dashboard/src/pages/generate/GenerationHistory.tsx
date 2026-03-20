@@ -37,9 +37,7 @@ export default function GenerationHistory({ onOpen }: GenerationHistoryProps) {
   const handleDiscard = async (id: number) => {
     try {
       await api.generateDiscard(id);
-      setItems((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, status: "discarded" } : item))
-      );
+      setItems((prev) => prev.filter((item) => item.id !== id));
     } catch (err) {
       console.error("Discard failed:", err);
     }

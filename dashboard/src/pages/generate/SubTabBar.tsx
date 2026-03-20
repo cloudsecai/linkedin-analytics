@@ -1,4 +1,4 @@
-const subTabs = ["Generate", "Rules", "Generation History"] as const;
+const subTabs = ["Generate", "Rules", "Sources", "Generation History"] as const;
 export type GenerateSubTab = (typeof subTabs)[number];
 
 interface SubTabBarProps {

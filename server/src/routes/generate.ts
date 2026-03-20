@@ -37,6 +37,8 @@ import { combineDrafts } from "../ai/combiner.js";
 import { coachCheck } from "../ai/coach-check.js";
 import { analyzeCoaching } from "../ai/coaching-analyzer.js";
 import { discoverTopics } from "../ai/discovery.js";
+import { discoverFeeds, discoverFeedsByGuessing } from "../ai/feed-discoverer.js";
+import { type RssSource } from "../ai/rss-fetcher.js";
 
 function getClient(): Anthropic {
   const apiKey = process.env.TRUSTMIND_LLM_API_KEY;
@@ -669,5 +671,82 @@ Return JSON only:
       failRun(db, runId, err.message);
       return reply.status(500).send({ error: err.message });
     }
+  });
+
+  // ── Sources management ─────────────────────────────────
+
+  app.get("/api/sources", async () => {
+    const sources = db
+      .prepare("SELECT id, name, feed_url, enabled, created_at FROM research_sources ORDER BY name")
+      .all() as RssSource[];
+    return { sources };
+  });
+
+  app.post("/api/sources", async (request, reply) => {
+    const { url } = request.body as { url: string };
+    if (!url || typeof url !== "string" || !url.trim()) {
+      return reply.status(400).send({ error: "url is required" });
+    }
+
+    // Auto-discover feeds from the URL
+    let feeds = await discoverFeeds(url.trim());
+    if (feeds.length === 0) {
+      feeds = await discoverFeedsByGuessing(url.trim());
+    }
+    if (feeds.length === 0) {
+      return reply.status(404).send({ error: "No feed found at that URL. Try a blog, newsletter, or news site." });
+    }
+
+    // Use the first discovered feed
+    const feed = feeds[0];
+
+    // Check for duplicate
+    const existing = db
+      .prepare("SELECT id FROM research_sources WHERE feed_url = ?")
+      .get(feed.feed_url);
+    if (existing) {
+      return reply.status(409).send({ error: "This source is already added." });
+    }
+
+    const result = db
+      .prepare("INSERT INTO research_sources (name, feed_url) VALUES (?, ?)")
+      .run(feed.title, feed.feed_url);
+
+    return {
+      source: {
+        id: result.lastInsertRowid,
+        name: feed.title,
+        feed_url: feed.feed_url,
+        enabled: 1,
+      },
+    };
+  });
+
+  app.patch("/api/sources/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { enabled, name } = request.body as { enabled?: boolean; name?: string };
+
+    const source = db.prepare("SELECT id FROM research_sources WHERE id = ?").get(Number(id));
+    if (!source) {
+      return reply.status(404).send({ error: "Source not found" });
+    }
+
+    if (typeof enabled === "boolean") {
+      db.prepare("UPDATE research_sources SET enabled = ? WHERE id = ?").run(enabled ? 1 : 0, Number(id));
+    }
+    if (typeof name === "string" && name.trim()) {
+      db.prepare("UPDATE research_sources SET name = ? WHERE id = ?").run(name.trim(), Number(id));
+    }
+
+    return { ok: true };
+  });
+
+  app.delete("/api/sources/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const result = db.prepare("DELETE FROM research_sources WHERE id = ?").run(Number(id));
+    if (result.changes === 0) {
+      return reply.status(404).send({ error: "Source not found" });
+    }
+    return { ok: true };
   });
 }
