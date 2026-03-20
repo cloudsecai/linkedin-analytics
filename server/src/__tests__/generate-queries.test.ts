@@ -22,6 +22,7 @@ import {
   getCoachingChangeLog,
   insertTopicLog,
   getRecentTopics,
+  getRecentStoryHeadlines,
   getPostTypeTemplate,
   DEFAULT_RULES,
 } from "../db/generate-queries.js";
@@ -209,5 +210,33 @@ describe("generation_topic_log", () => {
     const topics = getRecentTopics(db, 5);
     expect(topics.length).toBe(2);
     expect(topics[0].topic_category).toBe("Finance");
+  });
+});
+
+describe("getRecentStoryHeadlines", () => {
+  it("returns headlines from recent research sessions", () => {
+    insertResearch(db, {
+      post_type: "news",
+      stories_json: JSON.stringify([
+        { headline: "Headline Alpha", summary: "s", source: "src", age: "today", tag: "t", angles: [], is_stretch: false },
+        { headline: "Headline Beta", summary: "s", source: "src", age: "today", tag: "t", angles: [], is_stretch: false },
+      ]),
+      article_count: 2,
+      source_count: 1,
+    });
+
+    const headlines = getRecentStoryHeadlines(db, 30);
+    expect(headlines).toContain("Headline Alpha");
+    expect(headlines).toContain("Headline Beta");
+  });
+
+  it("limits the number of research sessions queried", () => {
+    // Get all headlines (limit=30 gets all sessions)
+    const allHeadlines = getRecentStoryHeadlines(db, 30);
+    // Get only from the most recent session (limit=1)
+    const oneSession = getRecentStoryHeadlines(db, 1);
+    // The limited query should return fewer headlines
+    expect(oneSession.length).toBeLessThan(allHeadlines.length);
+    expect(oneSession.length).toBeGreaterThan(0);
   });
 });

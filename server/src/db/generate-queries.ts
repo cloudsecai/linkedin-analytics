@@ -33,6 +33,7 @@ export interface Story {
   headline: string;
   summary: string;
   source: string;
+  source_url?: string;
   age: string;
   tag: string;
   angles: string[];
@@ -426,6 +427,18 @@ export function insertTopicLog(
   db.prepare(
     "INSERT INTO generation_topic_log (generation_id, topic_category, was_stretch) VALUES (?, ?, ?)"
   ).run(data.generation_id, data.topic_category ?? null, data.was_stretch ? 1 : 0);
+}
+
+export function getRecentStoryHeadlines(db: Database.Database, limit: number): string[] {
+  const rows = db
+    .prepare("SELECT stories_json FROM generation_research ORDER BY created_at DESC LIMIT ?")
+    .all(limit) as { stories_json: string }[];
+  const headlines: string[] = [];
+  for (const row of rows) {
+    const stories = JSON.parse(row.stories_json) as Story[];
+    headlines.push(...stories.map((s) => s.headline));
+  }
+  return headlines;
 }
 
 export function getRecentTopics(
