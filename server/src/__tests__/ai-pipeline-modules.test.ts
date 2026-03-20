@@ -8,6 +8,14 @@ import { generateDrafts } from "../ai/drafter.js";
 import { combineDrafts } from "../ai/combiner.js";
 
 import { analyzeCoaching } from "../ai/coaching-analyzer.js";
+
+// Mock searchWithSonarPro to avoid needing TRUSTMIND_LLM_API_KEY
+vi.mock("../ai/perplexity.js", () => ({
+  searchWithSonarPro: vi.fn().mockResolvedValue({
+    text: "AI costs have dropped significantly. Companies are seeing 90% reductions.",
+    citations: ["https://example.com/ai-costs", "https://example.com/cloud-pricing"],
+  }),
+}));
 import {
   seedDefaultRules,
   getRules,
@@ -59,7 +67,7 @@ describe("researcher", () => {
       ],
     });
     const client = makeMockClient(mockResponse);
-    const result = await researchStories(client, db, logger, "news");
+    const result = await researchStories(client, db, logger, "AI costs dropping");
     expect(result.stories).toHaveLength(3);
     expect(result.stories[2].is_stretch).toBe(true);
     expect(client.messages.create).toHaveBeenCalledOnce();

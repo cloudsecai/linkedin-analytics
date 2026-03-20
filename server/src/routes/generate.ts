@@ -62,13 +62,14 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
       return reply.status(400).send({ error: "topic is required" });
     }
     const safeTopic = topic.slice(0, 500).trim();
+    const safeAvoid = Array.isArray(avoid) ? avoid.slice(0, 50).map((s) => String(s).slice(0, 200)) : undefined;
 
     const client = getClient();
     const runId = createRun(db, "generate_research", 0);
     const logger = new AiLogger(db, runId);
 
     try {
-      const result = await researchStories(client, db, logger, safeTopic, avoid);
+      const result = await researchStories(client, db, logger, safeTopic, safeAvoid);
 
       const researchId = insertResearch(db, {
         post_type: "general",
