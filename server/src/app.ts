@@ -25,6 +25,7 @@ import multipart from "@fastify/multipart";
 import { registerInsightsRoutes } from "./routes/insights.js";
 import { registerSettingsRoutes } from "./routes/settings.js";
 import { registerGenerateRoutes } from "./routes/generate.js";
+import { registerProfileRoutes } from "./routes/profile.js";
 
 export function buildApp(dbPath: string) {
   const app = Fastify({ logger: false });
@@ -537,6 +538,9 @@ export function buildApp(dbPath: string) {
 
   // Generation routes (post generation pipeline)
   registerGenerateRoutes(app, db);
+
+  // Author profile routes (voice interview, profile extraction)
+  registerProfileRoutes(app, db);
 
   // On startup, retry image downloads for posts that have URLs but no local files
   app.addHook("onReady", async () => {

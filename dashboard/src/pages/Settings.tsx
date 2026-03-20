@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "../api/client";
 import type { AiRun } from "../api/client";
+import ProfileSection from "./settings/ProfileSection";
 
 function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
@@ -50,7 +51,7 @@ export default function Settings() {
   const [totalCostCents, setTotalCostCents] = useState<number>(0);
   const [refreshSaved, setRefreshSaved] = useState(false);
   const [runsOpen, setRunsOpen] = useState(false);
-  const thresholdTimer = useRef<ReturnType<typeof setTimeout>>();
+  const thresholdTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     return () => { clearTimeout(thresholdTimer.current); };
@@ -279,6 +280,8 @@ export default function Settings() {
             className="hidden"
           />
         </div>
+
+        <ProfileSection />
       </section>
 
       {/* ── Writing ─────────────────────────────────────────── */}

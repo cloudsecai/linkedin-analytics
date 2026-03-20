@@ -75,6 +75,7 @@ export interface GenerationRecord {
   total_input_tokens: number | null;
   total_output_tokens: number | null;
   total_cost_cents: number | null;
+  personal_connection: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -224,14 +225,15 @@ export function insertGeneration(
     selected_story_index: number;
     drafts_json: string;
     prompt_snapshot?: string;
+    personal_connection?: string;
   }
 ): number {
   const result = db
     .prepare(
-      `INSERT INTO generations (research_id, post_type, selected_story_index, drafts_json, prompt_snapshot)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO generations (research_id, post_type, selected_story_index, drafts_json, prompt_snapshot, personal_connection)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(data.research_id, data.post_type, data.selected_story_index, data.drafts_json, data.prompt_snapshot ?? null);
+    .run(data.research_id, data.post_type, data.selected_story_index, data.drafts_json, data.prompt_snapshot ?? null, data.personal_connection ?? null);
   return Number(result.lastInsertRowid);
 }
 

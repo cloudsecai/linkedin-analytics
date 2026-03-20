@@ -29,9 +29,13 @@ export async function generateDrafts(
   db: Database.Database,
   logger: AiLogger,
   postType: "news" | "topic" | "insight",
-  story: Story
+  story: Story,
+  personalConnection?: string
 ): Promise<DraftResult> {
   const storyContext = `**${story.headline}**\n${story.summary}\nSource: ${story.source} | ${story.age}\nPossible angles: ${story.angles.join("; ")}`;
+  const connectionContext = personalConnection
+    ? `\n\n## Personal Connection\n${personalConnection}`
+    : "";
   const assembled = assemblePrompt(db, postType, storyContext);
 
   const draftPromises = Object.entries(VARIATION_INSTRUCTIONS).map(
@@ -44,7 +48,7 @@ export async function generateDrafts(
         messages: [
           {
             role: "user",
-            content: `${instruction}
+            content: `${instruction}${connectionContext}
 
 Return JSON:
 {

@@ -327,6 +327,36 @@ export interface GenCoachingInsight {
   status: string;
 }
 
+export interface AuthorProfileResponse {
+  profile_text: string;
+  profile_json: {
+    mental_models: string[];
+    contrarian_convictions: string[];
+    scar_tissue: string[];
+    disproportionate_caring: string[];
+    vantage_point: string;
+    persuasion_style: string;
+  };
+  interview_count: number;
+}
+
+export interface InterviewSessionResponse {
+  client_secret: string;
+  model: string;
+}
+
+export interface ExtractedProfileResponse {
+  profile_text: string;
+  profile_json: {
+    mental_models: string[];
+    contrarian_convictions: string[];
+    scar_tissue: string[];
+    disproportionate_caring: string[];
+    vantage_point: string;
+    persuasion_style: string;
+  };
+}
+
 export const api = {
   overview: (params?: { since?: string; until?: string }) => {
     const q = new URLSearchParams();
@@ -454,6 +484,38 @@ export const api = {
   getSyncHealth: () =>
     get<{ warnings: Array<{ message: string; detected_at: string }> }>("/settings/sync-health"),
 
+  // ── Author Profile ──────────────────────────────────────────
+
+  getAuthorProfile: () =>
+    get<AuthorProfileResponse>("/author-profile"),
+
+  saveAuthorProfile: (profile_text: string, profile_json?: Record<string, any>) =>
+    fetch(`${BASE_URL}/author-profile`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile_text, profile_json }),
+    }).then((r) => r.json() as Promise<{ ok: boolean }>),
+
+  createInterviewSession: (preInfo?: { name?: string; role?: string; company?: string; bio?: string }) =>
+    fetch(`${BASE_URL}/author-profile/interview/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(preInfo ?? {}),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json() as Promise<InterviewSessionResponse>;
+    }),
+
+  extractProfile: (transcript: string, duration_seconds?: number) =>
+    fetch(`${BASE_URL}/author-profile/extract`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript, duration_seconds }),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json() as Promise<ExtractedProfileResponse>;
+    }),
+
   // ── Generate Pipeline ─────────────────────────────────────
 
   generateResearch: (postType: string) =>
@@ -466,11 +528,16 @@ export const api = {
       return r.json() as Promise<GenResearchResponse>;
     }),
 
-  generateDrafts: (researchId: number, storyIndex: number, postType: string) =>
+  generateDrafts: (researchId: number, storyIndex: number, postType: string, personalConnection?: string) =>
     fetch(`${BASE_URL}/generate/drafts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ research_id: researchId, story_index: storyIndex, post_type: postType }),
+      body: JSON.stringify({
+        research_id: researchId,
+        story_index: storyIndex,
+        post_type: postType,
+        personal_connection: personalConnection,
+      }),
     }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json() as Promise<GenDraftsResponse>;

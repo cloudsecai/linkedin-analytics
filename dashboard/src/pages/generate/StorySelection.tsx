@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { api, type GenStory } from "../../api/client";
 import StoryCard from "./components/StoryCard";
 
@@ -12,6 +12,7 @@ interface StorySelectionProps {
     sourceCount: number;
     researchId: number | null;
     selectedStoryIndex: number | null;
+    personalConnection: string;
   };
   setGen: (fn: (prev: any) => any) => void;
   loading: boolean;
@@ -26,6 +27,8 @@ const postTypes: { value: PostType; label: string }[] = [
 ];
 
 export default function StorySelection({ gen, setGen, loading, setLoading, onNext }: StorySelectionProps) {
+  const [showConnectionInput, setShowConnectionInput] = useState(false);
+
   // Auto-research once per day when visiting the Generate tab
   const didMount = useRef(false);
   useEffect(() => {
@@ -63,7 +66,7 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
     if (gen.selectedStoryIndex === null || gen.researchId === null) return;
     setLoading(true);
     try {
-      const res = await api.generateDrafts(gen.researchId, gen.selectedStoryIndex, gen.postType);
+      const res = await api.generateDrafts(gen.researchId, gen.selectedStoryIndex, gen.postType, gen.personalConnection || undefined);
       setGen((prev: any) => ({
         ...prev,
         generationId: res.generation_id,
@@ -192,11 +195,47 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
               Auto-pick best match
             </button>
             <button
-              onClick={handleGenerateDrafts}
+              onClick={() => setShowConnectionInput(true)}
               disabled={gen.selectedStoryIndex === null || loading}
               className="px-4 py-2 bg-gen-text-0 text-gen-bg-0 text-[13px] font-medium rounded-[10px] hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {loading ? "Generating..." : "Generate drafts"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Personal connection input */}
+      {showConnectionInput && gen.selectedStoryIndex !== null && (
+        <div className="mt-4 p-4 bg-gen-bg-1 border border-gen-border-1 rounded-xl space-y-3">
+          <div>
+            <h3 className="text-[14px] font-medium text-gen-text-0">
+              What's your personal connection to this?
+            </h3>
+            <p className="text-[12px] text-gen-text-3 mt-1">
+              Optional — helps the AI ground the draft in your real experience.
+            </p>
+          </div>
+          <textarea
+            value={gen.personalConnection}
+            onChange={(e) => setGen((prev: any) => ({ ...prev, personalConnection: e.target.value }))}
+            rows={3}
+            placeholder='e.g. "We migrated off Heroku to AWS and it took 6 months longer than estimated. The real cost wasn&#39;t the migration — it was the feature freeze."'
+            className="w-full bg-gen-bg-0 border border-gen-border-1 rounded-lg px-3 py-2 text-[13px] text-gen-text-0 placeholder:text-gen-text-3 focus:outline-none focus:border-gen-accent resize-none"
+          />
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => { setShowConnectionInput(false); handleGenerateDrafts(); }}
+              className="text-[13px] text-gen-text-3 hover:text-gen-text-1 transition-colors"
+            >
+              Skip — generate without
+            </button>
+            <button
+              onClick={() => { setShowConnectionInput(false); handleGenerateDrafts(); }}
+              disabled={loading}
+              className="px-4 py-2 bg-gen-text-0 text-gen-bg-0 text-[13px] font-medium rounded-[10px] hover:bg-white transition-colors disabled:opacity-40"
+            >
+              {loading ? "Generating..." : "Generate with connection"}
             </button>
           </div>
         </div>

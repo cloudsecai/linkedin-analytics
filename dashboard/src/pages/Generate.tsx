@@ -27,6 +27,7 @@ interface GenerationState {
   finalDraft: string;
   qualityGate: GenQualityGate | null;
   appliedInsights: GenCoachingInsight[];
+  personalConnection: string;
 }
 
 const initialState: GenerationState = {
@@ -43,6 +44,7 @@ const initialState: GenerationState = {
   finalDraft: "",
   qualityGate: null,
   appliedInsights: [],
+  personalConnection: "",
 };
 
 export default function Generate() {

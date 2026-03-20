@@ -6,6 +6,7 @@ import {
   type GenerationRule,
   type CoachingInsight,
 } from "../db/generate-queries.js";
+import { getAuthorProfile } from "../db/profile-queries.js";
 
 export interface AssembledPrompt {
   system: string;
@@ -13,6 +14,7 @@ export interface AssembledPrompt {
   layers: {
     rules: number;
     coaching: number;
+    author_profile: number;
     post_type: number;
   };
 }
@@ -22,7 +24,7 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-const TOKEN_BUDGET = 2000;
+const TOKEN_BUDGET = 2200;
 
 function formatRulesLayer(rules: GenerationRule[]): string {
   const categories: Record<string, GenerationRule[]> = {};
@@ -62,6 +64,11 @@ function formatCoachingLayer(insights: CoachingInsight[]): string {
   return `## Coaching Insights\n\n${lines.join("\n")}`;
 }
 
+function formatProfileLayer(profileText: string): string {
+  if (!profileText || profileText.trim().length === 0) return "";
+  return `## Author Profile\n\n${profileText}`;
+}
+
 function formatPostTypeLayer(template: string, postType: string): string {
   const labels: Record<string, string> = {
     news: "News Reaction",
@@ -86,15 +93,20 @@ export function assemblePrompt(
     ? formatPostTypeLayer(template.template_text, postType)
     : "";
 
+  // Author profile layer (always present if profile exists)
+  const profile = getAuthorProfile(db);
+  const profileText = profile ? formatProfileLayer(profile.profile_text) : "";
+  const profileTokens = estimateTokens(profileText);
+
   let rulesTokens = estimateTokens(rulesText);
   let coachingTokens = estimateTokens(coachingText);
   const postTypeTokens = estimateTokens(postTypeText);
 
-  // If over budget, truncate coaching insights (lowest confidence first — here just trim from end)
-  const layerTotal = rulesTokens + coachingTokens + postTypeTokens;
+  // If over budget, truncate coaching insights (profile has priority alongside rules)
+  const layerTotal = rulesTokens + coachingTokens + profileTokens + postTypeTokens;
   let finalCoachingText = coachingText;
   if (layerTotal > TOKEN_BUDGET && insights.length > 0) {
-    const available = TOKEN_BUDGET - rulesTokens - postTypeTokens;
+    const available = TOKEN_BUDGET - rulesTokens - profileTokens - postTypeTokens;
     if (available > 0) {
       // Progressively remove insights from the end until under budget
       let trimmedInsights = [...insights];
@@ -104,7 +116,7 @@ export function assemblePrompt(
       finalCoachingText = formatCoachingLayer(trimmedInsights);
       coachingTokens = estimateTokens(finalCoachingText);
     } else {
-      console.warn(`[prompt-assembler] Rules alone (${rulesTokens} tokens) exceed budget (${TOKEN_BUDGET}). Coaching insights omitted.`);
+      console.warn(`[prompt-assembler] Rules + profile (${rulesTokens + profileTokens} tokens) exceed budget (${TOKEN_BUDGET}). Coaching insights omitted.`);
       finalCoachingText = "";
       coachingTokens = 0;
     }
@@ -116,6 +128,8 @@ export function assemblePrompt(
     rulesText,
     "",
     finalCoachingText,
+    "",
+    profileText,
     "",
     postTypeText,
     "",
@@ -130,6 +144,7 @@ export function assemblePrompt(
     layers: {
       rules: rulesTokens,
       coaching: coachingTokens,
+      author_profile: profileTokens,
       post_type: postTypeTokens,
     },
   };
