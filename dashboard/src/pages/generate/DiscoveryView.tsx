@@ -20,16 +20,132 @@ interface DiscoveryViewProps {
 }
 
 const DISCOVERY_MESSAGES = [
-  "Scanning news feeds...",
+  "Scanning feeds...",
+  "Reading headlines...",
   "Clustering topics...",
-  "Finding interesting angles...",
+  "Finding angles...",
 ];
 
 const RESEARCH_MESSAGES = [
-  "Researching your topic...",
-  "Finding multiple perspectives...",
-  "Preparing your stories...",
+  "Deep diving...",
+  "Finding perspectives...",
+  "Building story cards...",
 ];
+
+const CACHE_KEY = "reachlab_discovery_cache";
+
+function getCachedTopics(): DiscoveryCategory[] | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const cached = JSON.parse(raw);
+    // Valid for the calendar day
+    if (cached.date === new Date().toISOString().slice(0, 10) && Array.isArray(cached.categories) && cached.categories.length > 0) {
+      return cached.categories;
+    }
+  } catch {}
+  return null;
+}
+
+function setCachedTopics(categories: DiscoveryCategory[]) {
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+      date: new Date().toISOString().slice(0, 10),
+      categories,
+    }));
+  } catch {}
+}
+
+function clearCachedTopics() {
+  try { sessionStorage.removeItem(CACHE_KEY); } catch {}
+}
+
+// ── Scanner animation ──────────────────────────────────────
+
+function ScannerLoader({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 select-none">
+      {/* Scanner orb */}
+      <div className="relative w-28 h-28 mb-8">
+        {/* Ambient glow */}
+        <div
+          className="absolute inset-0 rounded-full"
+          style={{
+            background: "radial-gradient(circle, rgba(107,161,245,0.2) 0%, transparent 70%)",
+            animation: "scanner-glow 3s ease-in-out infinite",
+          }}
+        />
+
+        {/* Orbit ring 1 — fast, tight */}
+        <div
+          className="absolute inset-3"
+          style={{ animation: "scanner-orbit-1 2.2s linear infinite" }}
+        >
+          <div
+            className="absolute w-full h-full rounded-full"
+            style={{
+              background: "conic-gradient(from 0deg, transparent 0%, rgba(107,161,245,0.6) 30%, transparent 60%)",
+              filter: "blur(1px)",
+            }}
+          />
+        </div>
+
+        {/* Orbit ring 2 — medium, counter-rotate */}
+        <div
+          className="absolute inset-1"
+          style={{ animation: "scanner-orbit-2 3.5s linear infinite" }}
+        >
+          <div
+            className="absolute w-full h-full rounded-full"
+            style={{
+              background: "conic-gradient(from 180deg, transparent 0%, rgba(139,92,246,0.4) 25%, transparent 50%)",
+              filter: "blur(2px)",
+            }}
+          />
+        </div>
+
+        {/* Orbit ring 3 — slow, wide */}
+        <div
+          className="absolute -inset-1"
+          style={{ animation: "scanner-orbit-3 5s linear infinite" }}
+        >
+          <div
+            className="absolute w-full h-full rounded-full"
+            style={{
+              background: "conic-gradient(from 90deg, transparent 0%, rgba(107,161,245,0.2) 15%, transparent 35%)",
+              filter: "blur(4px)",
+            }}
+          />
+        </div>
+
+        {/* Core nucleus */}
+        <div
+          className="absolute inset-0 flex items-center justify-center"
+          style={{ animation: "scanner-pulse 2.5s ease-in-out infinite" }}
+        >
+          <div
+            className="w-3 h-3 rounded-full"
+            style={{
+              background: "white",
+              boxShadow: "0 0 12px 4px rgba(107,161,245,0.5), 0 0 24px 8px rgba(107,161,245,0.2)",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Status message */}
+      <p
+        key={message}
+        className="text-[13px] text-gen-text-3 tracking-wide"
+        style={{ animation: "scanner-msg 0.3s ease both" }}
+      >
+        {message}
+      </p>
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────
 
 export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext }: DiscoveryViewProps) {
   const [topicInput, setTopicInput] = useState("");
@@ -48,7 +164,7 @@ export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext
       } else if (loadingTimerRef.current) {
         clearInterval(loadingTimerRef.current);
       }
-    }, 3000);
+    }, 2500);
   };
 
   const stopLoadingMessages = () => {
@@ -63,10 +179,22 @@ export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext
     return () => stopLoadingMessages();
   }, []);
 
-  // Auto-discover on mount if no topics cached
+  // Auto-discover on mount: use daily cache if available
   useEffect(() => {
     if (!gen.discoveryTopics && !gen.stories.length && !loading) {
-      handleDiscover();
+      const cached = getCachedTopics();
+      if (cached) {
+        setGen((prev: any) => ({
+          ...prev,
+          discoveryTopics: cached,
+          stories: [],
+          researchId: null,
+          selectedStoryIndex: null,
+          selectedTopic: null,
+        }));
+      } else {
+        handleDiscover();
+      }
     }
   }, []);
 
@@ -78,6 +206,7 @@ export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext
 
     try {
       const res = await api.generateDiscover();
+      setCachedTopics(res.categories);
       setGen((prev: any) => ({
         ...prev,
         discoveryTopics: res.categories,
@@ -93,6 +222,12 @@ export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext
       setIsDiscovering(false);
       stopLoadingMessages();
     }
+  };
+
+  const handleRefresh = () => {
+    clearCachedTopics();
+    setGen((prev: any) => ({ ...prev, discoveryTopics: null }));
+    handleDiscover();
   };
 
   const handleTopicClick = async (label: string) => {
@@ -168,15 +303,9 @@ export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext
         </div>
       )}
 
-      {/* Loading state */}
+      {/* Loading state — scanner animation */}
       {loading && !hasStories && (
-        <div className="flex items-center justify-center py-20 text-gen-text-3 text-[14px]">
-          <svg className="animate-spin h-4 w-4 mr-2 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-            <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-          </svg>
-          {loadingMessage || "Loading..."}
-        </div>
+        <ScannerLoader message={loadingMessage || "Scanning..."} />
       )}
 
       {/* Discovery bubbles view */}
@@ -203,7 +332,7 @@ export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext
 
           {hasBubbles && (
             <>
-              {/* Divider */}
+              {/* Divider with refresh */}
               <div className="flex items-center gap-4 mb-8">
                 <div className="flex-1 h-px bg-gen-border-1" />
                 <span className="text-[11px] uppercase tracking-[1.6px] text-gen-text-4">or explore trending topics</span>
@@ -237,9 +366,19 @@ export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext
                 </div>
               ))}
 
-              <p className="text-center text-[12px] text-gen-text-4 mt-6">
-                ~{gen.discoveryTopics!.reduce((sum, c) => sum + c.topics.length, 0)} topics from your RSS feeds · refreshed each session
-              </p>
+              {/* Footer with refresh */}
+              <div className="flex items-center justify-center gap-3 mt-6">
+                <span className="text-[12px] text-gen-text-4">
+                  ~{gen.discoveryTopics!.reduce((sum, c) => sum + c.topics.length, 0)} topics from your feeds
+                </span>
+                <span className="text-gen-text-4">·</span>
+                <button
+                  onClick={handleRefresh}
+                  className="text-[12px] text-gen-text-3 hover:text-gen-accent transition-colors cursor-pointer"
+                >
+                  Find new topics
+                </button>
+              </div>
             </>
           )}
 
