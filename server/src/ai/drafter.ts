@@ -16,7 +16,7 @@ const VARIATION_INSTRUCTIONS: Record<string, string> = {
   contrarian:
     "Write a CONTRARIAN variation. Challenge the obvious take. Lead with what most people get wrong about this topic. Be specific about why the conventional wisdom fails.",
   operator:
-    "Write an OPERATOR variation. Ground everything in direct, hands-on experience. Use specific numbers, tools, timelines. Write as someone who has done the work, not observed it.",
+    "Write an OPERATOR variation. Ground the post in practitioner perspective — the kind of thing someone who has done the work would notice. If an Author Profile is provided in the system prompt, draw on those specific experiences. If NOT, write from a general practitioner's viewpoint without inventing specific personal details (no fake companies, timelines, or projects).",
   future:
     "Write a FUTURE-FACING variation. Extrapolate from this story to what it means 2-5 years out. Make a specific prediction grounded in the current evidence. Be bold but defensible.",
 };

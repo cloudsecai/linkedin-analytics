@@ -122,8 +122,12 @@ export function assemblePrompt(
     }
   }
 
+  const noFabricationRule = !profileText
+    ? "\nIMPORTANT: Do NOT invent specific personal details, company names, project timelines, or experiences. If no Author Profile is provided, write from a general practitioner perspective. Never fabricate credentials or claim specific firsthand experience that wasn't provided."
+    : "";
+
   const system = [
-    "You are a LinkedIn post ghostwriter.",
+    "You are a LinkedIn post ghostwriter." + noFabricationRule,
     "",
     rulesText,
     "",

@@ -28,6 +28,7 @@ const postTypes: { value: PostType; label: string }[] = [
 
 export default function StorySelection({ gen, setGen, loading, setLoading, onNext }: StorySelectionProps) {
   const [showConnectionInput, setShowConnectionInput] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Auto-research once per day when visiting the Generate tab
   const didMount = useRef(false);
@@ -43,6 +44,15 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
 
   const doResearch = async (postType: PostType) => {
     setLoading(true);
+    setError(null);
+    setShowConnectionInput(false);
+    // Clear stories immediately so the loading spinner shows
+    setGen((prev: any) => ({
+      ...prev,
+      stories: [],
+      selectedStoryIndex: null,
+      postType,
+    }));
     try {
       const res = await api.generateResearch(postType);
       localStorage.setItem("reachlab_last_research_date", new Date().toDateString());
@@ -55,8 +65,9 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
         selectedStoryIndex: null,
         postType,
       }));
-    } catch (err) {
+    } catch (err: any) {
       console.error("Research failed:", err);
+      setError(err.message ?? "Research failed. Try again.");
     } finally {
       setLoading(false);
     }
@@ -129,6 +140,13 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
           ))}
         </div>
       </div>
+
+      {/* Error state */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-[13px] text-red-400">
+          {error}
+        </div>
+      )}
 
       {/* Loading state */}
       {loading && gen.stories.length === 0 && (
