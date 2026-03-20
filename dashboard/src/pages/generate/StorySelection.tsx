@@ -1,15 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api, type GenStory } from "../../api/client";
 import StoryCard from "./components/StoryCard";
-
-type PostType = "news" | "topic" | "insight";
-
-interface TypeCache {
-  stories: GenStory[];
-  researchId: number | null;
-  articleCount: number;
-  sourceCount: number;
-}
+import type { PostType, TypeCache } from "../Generate";
 
 interface StorySelectionProps {
   gen: {
@@ -84,6 +76,8 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
 
   const switchPostType = (newType: PostType) => {
     const cached = gen.cache[newType];
+    setError(null);
+    setShowConnectionInput(false);
     setGen((prev: any) => ({
       ...prev,
       postType: newType,
@@ -167,8 +161,9 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
         selectedDraftIndices: [],
       }));
       onNext();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Draft generation failed:", err);
+      setError(err.message ?? "Draft generation failed. Try again.");
     } finally {
       setLoading(false);
     }
@@ -190,8 +185,9 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
         selectedDraftIndices: [],
       }));
       onNext();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Draft generation failed:", err);
+      setError(err.message ?? "Draft generation failed. Try again.");
     } finally {
       setLoading(false);
     }
@@ -204,7 +200,7 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
       {/* Header row: title + post type tabs */}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-[15px] font-medium text-gen-text-0">
-          Pick a story to write about
+          {hasStories ? "Pick a story to write about" : "What do you want to write about?"}
         </h2>
         <div className="flex gap-1">
           {postTypes.map((pt) => (

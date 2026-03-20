@@ -13,9 +13,9 @@ import type {
   GenCoachingInsight,
 } from "../api/client";
 
-type PostType = "news" | "topic" | "insight";
+export type PostType = "news" | "topic" | "insight";
 
-interface TypeCache {
+export interface TypeCache {
   stories: GenStory[];
   researchId: number | null;
   articleCount: number;
