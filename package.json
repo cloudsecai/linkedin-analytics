@@ -1,19 +1,14 @@
 {
   "name": "reachlab",
   "private": true,
-  "workspaces": [
-    "server",
-    "extension",
-    "dashboard"
-  ],
   "scripts": {
-    "start": "npm run start -w server",
+    "start": "pnpm --filter linkedin-analytics-server start",
     "dev": "NODE_ENV=development run-p dev:server dev:dashboard",
-    "dev:server": "NODE_ENV=development npm run dev -w server",
-    "dev:dashboard": "npm run dev -w dashboard",
-    "test": "npm test -w server",
-    "build:dashboard": "npm run build -w dashboard",
-    "build:extension": "npm run build -w extension"
+    "dev:server": "NODE_ENV=development pnpm --filter linkedin-analytics-server dev",
+    "dev:dashboard": "pnpm --filter linkedin-analytics-dashboard dev",
+    "test": "pnpm --filter linkedin-analytics-server test",
+    "build:dashboard": "pnpm --filter linkedin-analytics-dashboard build",
+    "build:extension": "pnpm --filter extension build"
   },
   "engines": {
     "node": ">=20"
