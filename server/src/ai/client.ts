@@ -5,6 +5,7 @@ export const MODELS = {
   SONNET: "anthropic/claude-sonnet-4-6",
   OPUS: "anthropic/claude-opus-4-6",
   GPT54: "openai/gpt-5.4",
+  SONAR_PRO: "perplexity/sonar-pro",
 } as const;
 
 // OpenRouter pricing per 1M tokens (as of March 2026)
@@ -13,6 +14,7 @@ export const MODEL_PRICING: Record<string, { input: number; output: number }> = 
   [MODELS.SONNET]: { input: 3, output: 15 },
   [MODELS.OPUS]: { input: 15, output: 75 },
   [MODELS.GPT54]: { input: 2.5, output: 10 },
+  [MODELS.SONAR_PRO]: { input: 3, output: 15 },
 };
 
 const OPENROUTER_FEE = 0.055; // 5.5%

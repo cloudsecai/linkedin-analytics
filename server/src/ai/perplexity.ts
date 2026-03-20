@@ -35,9 +35,9 @@ export async function searchWithSonarPro(
   postType: string,
   logger: AiLogger
 ): Promise<SonarResult> {
-  const apiKey = process.env.PERPLEXITY_API_KEY;
+  const apiKey = process.env.TRUSTMIND_LLM_API_KEY;
   if (!apiKey) {
-    throw new Error("PERPLEXITY_API_KEY is required for web research");
+    throw new Error("TRUSTMIND_LLM_API_KEY is required for web research");
   }
 
   const searchPrompt = buildSearchPrompt(topic, postType);
@@ -47,14 +47,14 @@ export async function searchWithSonarPro(
 
   let response: Response;
   try {
-    response = await fetch("https://api.perplexity.ai/chat/completions", {
+    response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "sonar-pro",
+        model: "perplexity/sonar-pro",
         messages: [{ role: "user", content: searchPrompt }],
       }),
       signal: controller.signal,
@@ -65,7 +65,7 @@ export async function searchWithSonarPro(
 
   if (!response.ok) {
     const errText = await response.text().catch(() => "");
-    throw new Error(`Perplexity API error: ${response.status} ${errText}`);
+    throw new Error(`Sonar Pro API error: ${response.status} ${errText}`);
   }
 
   const json = await response.json();
