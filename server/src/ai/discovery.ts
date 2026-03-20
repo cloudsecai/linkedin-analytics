@@ -79,9 +79,22 @@ export async function discoverTopics(
 ): Promise<DiscoveryResult> {
   const rssItems = await fetchAllFeeds(db);
 
-  // Pull the author's writing prompt for topic relevance filtering
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'writing_prompt'").get() as { value: string } | undefined;
-  const authorContext = row?.value;
+  // Build author context from taxonomy (what they've written about) + writing prompt
+  const topics = db
+    .prepare("SELECT name FROM ai_taxonomy ORDER BY name")
+    .all() as { name: string }[];
+  const writingPrompt = db
+    .prepare("SELECT value FROM settings WHERE key = 'writing_prompt'")
+    .get() as { value: string } | undefined;
+
+  const contextParts: string[] = [];
+  if (topics.length > 0) {
+    contextParts.push(`This creator writes about: ${topics.map((t) => t.name).join(", ")}`);
+  }
+  if (writingPrompt?.value) {
+    contextParts.push(writingPrompt.value);
+  }
+  const authorContext = contextParts.length > 0 ? contextParts.join("\n\n") : undefined;
 
   const prompt = buildClusteringPrompt(rssItems, authorContext);
 
