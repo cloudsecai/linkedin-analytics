@@ -52,30 +52,24 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
   // ── Research ─────────────────────────────────────────────
 
   app.post("/api/generate/research", async (request, reply) => {
-    const { post_type, topic, avoid } = request.body as {
-      post_type: string;
-      topic?: string;
+    const { topic, avoid } = request.body as {
+      topic: string;
       avoid?: string[];
     };
-    if (!["news", "topic", "insight"].includes(post_type)) {
-      return reply.status(400).send({ error: "post_type must be news, topic, or insight" });
+    if (!topic || typeof topic !== "string" || !topic.trim()) {
+      return reply.status(400).send({ error: "topic is required" });
     }
-    // Validate optional inputs at boundary
-    const safeTopic = topic ? topic.slice(0, 500).trim() || undefined : undefined;
-    const safeAvoid = Array.isArray(avoid) ? avoid.slice(0, 50).map((s) => String(s).slice(0, 200)) : undefined;
+    const safeTopic = topic.slice(0, 500).trim();
 
     const client = getClient();
     const runId = createRun(db, "generate_research", 0);
     const logger = new AiLogger(db, runId);
 
     try {
-      const result = await researchStories(client, db, logger, post_type, {
-        topic: safeTopic,
-        avoid: safeAvoid,
-      });
+      const result = await researchStories(client, db, logger, safeTopic, avoid);
 
       const researchId = insertResearch(db, {
-        post_type,
+        post_type: "general",
         stories_json: JSON.stringify(result.stories),
         sources_json: JSON.stringify(result.sources_metadata),
         article_count: result.article_count,

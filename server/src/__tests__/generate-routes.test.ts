@@ -96,11 +96,11 @@ describe("POST /api/generate/history/:id/discard", () => {
 });
 
 describe("POST /api/generate/research", () => {
-  it("rejects invalid post_type", async () => {
+  it("rejects missing topic", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/generate/research",
-      payload: { post_type: "invalid" },
+      payload: {},
     });
     expect(res.statusCode).toBe(400);
   });

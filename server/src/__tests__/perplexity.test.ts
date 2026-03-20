@@ -2,27 +2,26 @@ import { describe, it, expect } from "vitest";
 import { buildSearchPrompt, parseSonarResponse } from "../ai/perplexity.js";
 
 describe("buildSearchPrompt", () => {
-  it("builds a news search prompt", () => {
-    const prompt = buildSearchPrompt("AI agents replacing SREs", "news");
+  it("includes the topic in the prompt", () => {
+    const prompt = buildSearchPrompt("AI agents replacing SREs");
     expect(prompt).toContain("AI agents replacing SREs");
-    expect(prompt).toContain("recent news coverage");
   });
 
-  it("builds a topic search prompt", () => {
-    const prompt = buildSearchPrompt("zero trust architecture", "topic");
+  it("includes practitioner-focused language", () => {
+    const prompt = buildSearchPrompt("zero trust architecture");
     expect(prompt).toContain("zero trust architecture");
-    expect(prompt).toContain("discussions");
+    expect(prompt).toContain("practitioners");
   });
 
-  it("builds an insight search prompt", () => {
-    const prompt = buildSearchPrompt("migrating to microservices", "insight");
+  it("asks for multiple perspectives and examples", () => {
+    const prompt = buildSearchPrompt("migrating to microservices");
     expect(prompt).toContain("migrating to microservices");
-    expect(prompt).toContain("practitioner");
+    expect(prompt).toContain("examples");
   });
 
-  it("falls back to topic for unknown post types", () => {
-    const prompt = buildSearchPrompt("test topic", "unknown_type");
-    expect(prompt).toContain("discussions");
+  it("mentions recent coverage", () => {
+    const prompt = buildSearchPrompt("test topic");
+    expect(prompt).toContain("recent coverage");
   });
 });
 

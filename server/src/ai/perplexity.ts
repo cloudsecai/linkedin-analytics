@@ -6,18 +6,8 @@ export interface SonarResult {
   usage: { input_tokens: number; output_tokens: number };
 }
 
-const SEARCH_PROMPTS: Record<string, (topic: string) => string> = {
-  news: (topic) =>
-    `Find recent news coverage, reactions, and analysis about "${topic}" from the past week. Include multiple sources and perspectives. Focus on what happened, who reacted, and why it matters for practitioners.`,
-  topic: (topic) =>
-    `Find current discussions, debates, and different perspectives on "${topic}". What are practitioners saying? What's controversial? Include specific examples and named sources.`,
-  insight: (topic) =>
-    `Find practitioner experiences, case studies, and lessons learned about "${topic}". What worked, what failed, what surprised people? Focus on firsthand accounts and concrete outcomes.`,
-};
-
-export function buildSearchPrompt(topic: string, postType: string): string {
-  const builder = SEARCH_PROMPTS[postType] ?? SEARCH_PROMPTS.topic;
-  return builder(topic);
+export function buildSearchPrompt(topic: string): string {
+  return `Find recent coverage, practitioner discussions, and multiple perspectives on "${topic}". Include specific examples, named sources, and concrete outcomes. Focus on what happened, what's controversial, and what practitioners are saying.`;
 }
 
 export function parseSonarResponse(json: any): SonarResult {
@@ -32,7 +22,6 @@ export function parseSonarResponse(json: any): SonarResult {
 
 export async function searchWithSonarPro(
   topic: string,
-  postType: string,
   logger: AiLogger
 ): Promise<SonarResult> {
   const apiKey = process.env.TRUSTMIND_LLM_API_KEY;
@@ -40,7 +29,7 @@ export async function searchWithSonarPro(
     throw new Error("TRUSTMIND_LLM_API_KEY is required for web research");
   }
 
-  const searchPrompt = buildSearchPrompt(topic, postType);
+  const searchPrompt = buildSearchPrompt(topic);
   const start = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
