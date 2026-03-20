@@ -141,7 +141,7 @@ export function getLatestCompletedRun(
   return (
     (db
       .prepare(
-        "SELECT id, status, post_count, completed_at FROM ai_runs WHERE status = 'completed' AND triggered_by NOT LIKE '%tagging%' ORDER BY id DESC LIMIT 1"
+        "SELECT ar.id, ar.status, ar.post_count, ar.completed_at FROM ai_runs ar JOIN ai_overview ao ON ao.run_id = ar.id WHERE ar.status = 'completed' ORDER BY ar.id DESC LIMIT 1"
       )
       .get() as
       | { id: number; status: string; post_count: number; completed_at: string }

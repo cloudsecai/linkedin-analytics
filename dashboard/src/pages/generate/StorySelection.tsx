@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import { api, type GenStory } from "../../api/client";
 import StoryCard from "./components/StoryCard";
 
@@ -45,16 +44,6 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
       setLoading(false);
     }
   };
-
-  // Auto-research on first mount if no stories (ref guard for StrictMode)
-  const didMount = useRef(false);
-  useEffect(() => {
-    if (didMount.current) return;
-    didMount.current = true;
-    if (gen.stories.length === 0 && !loading) {
-      doResearch(gen.postType);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerateDrafts = async () => {
     if (gen.selectedStoryIndex === null || gen.researchId === null) return;
@@ -132,6 +121,19 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
             <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
           </svg>
           Researching stories...
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && gen.stories.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 text-gen-text-3 text-[14px]">
+          <p className="mb-4">Choose a post type above to research stories</p>
+          <button
+            onClick={() => doResearch(gen.postType)}
+            className="px-4 py-2 rounded-lg bg-gen-accent text-gen-bg-0 text-[13px] font-medium hover:opacity-90 transition-opacity"
+          >
+            Research stories
+          </button>
         </div>
       )}
 
