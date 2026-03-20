@@ -60,13 +60,13 @@ export default function DraftSidebar({
                         e.stopPropagation();
                         onToggleInclude(i);
                       }}
-                      className={`w-8 h-[18px] rounded-full transition-colors relative ${
+                      className={`w-9 h-5 rounded-full transition-colors relative overflow-hidden ${
                         isIncluded ? "bg-gen-accent" : "bg-gen-bg-3"
                       }`}
                     >
                       <span
-                        className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
-                          isIncluded ? "translate-x-[16px]" : "translate-x-[2px]"
+                        className={`absolute top-[3px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
+                          isIncluded ? "translate-x-[19px]" : "translate-x-[3px]"
                         }`}
                       />
                     </button>
