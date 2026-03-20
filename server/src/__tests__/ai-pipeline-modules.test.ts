@@ -85,7 +85,7 @@ describe("drafter", () => {
       angles: ["Cost reduction angle"],
       is_stretch: false,
     };
-    const result = await generateDrafts(client, db, logger, "news", story);
+    const result = await generateDrafts(client, db, logger, story);
     expect(result.drafts).toHaveLength(3);
     expect(result.drafts[0].type).toBe("contrarian");
     expect(result.drafts[1].type).toBe("operator");

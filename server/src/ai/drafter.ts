@@ -28,7 +28,6 @@ export async function generateDrafts(
   client: Anthropic,
   db: Database.Database,
   logger: AiLogger,
-  postType: "news" | "topic" | "insight",
   story: Story,
   personalConnection?: string
 ): Promise<DraftResult> {
@@ -36,7 +35,7 @@ export async function generateDrafts(
   const connectionContext = personalConnection
     ? `\n\n## Personal Connection\n${personalConnection}`
     : "";
-  const assembled = assemblePrompt(db, postType, storyContext);
+  const assembled = assemblePrompt(db, storyContext);
 
   const draftPromises = Object.entries(VARIATION_INSTRUCTIONS).map(
     async ([variationType, instruction]): Promise<{ draft: Draft; input_tokens: number; output_tokens: number }> => {

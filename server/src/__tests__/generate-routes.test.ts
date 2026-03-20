@@ -113,7 +113,7 @@ describe("POST /api/generate/drafts", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/generate/drafts",
-      payload: { research_id: 999, story_index: 0, post_type: "news" },
+      payload: { research_id: 999, story_index: 0 },
     });
     expect(res.statusCode).toBe(404);
   });

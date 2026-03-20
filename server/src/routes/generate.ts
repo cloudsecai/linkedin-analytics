@@ -100,16 +100,11 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
   // ── Drafts ───────────────────────────────────────────────
 
   app.post("/api/generate/drafts", async (request, reply) => {
-    const { research_id, story_index, post_type, personal_connection } = request.body as {
+    const { research_id, story_index, personal_connection } = request.body as {
       research_id: number;
       story_index: number;
-      post_type: string;
       personal_connection?: string;
     };
-
-    if (!["news", "topic", "insight"].includes(post_type)) {
-      return reply.status(400).send({ error: "post_type must be news, topic, or insight" });
-    }
 
     const research = getResearch(db, research_id);
     if (!research) {
@@ -130,14 +125,13 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
         client,
         db,
         logger,
-        post_type as "news" | "topic" | "insight",
         stories[story_index],
         personal_connection
       );
 
       const generationId = insertGeneration(db, {
         research_id,
-        post_type,
+        post_type: "general",
         selected_story_index: story_index,
         drafts_json: JSON.stringify(result.drafts),
         prompt_snapshot: result.prompt_snapshot,

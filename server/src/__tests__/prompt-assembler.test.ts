@@ -27,15 +27,14 @@ afterAll(() => {
 });
 
 describe("assemblePrompt", () => {
-  it("includes all 3 layers for news post type", () => {
-    const result = assemblePrompt(db, "news", "Breaking: AI costs drop 90%");
+  it("includes writing rules and story context", () => {
+    const result = assemblePrompt(db, "Breaking: AI costs drop 90%");
     expect(result.system).toContain("Writing Rules");
-    expect(result.system).toContain("Post Type: News Reaction");
     expect(result.system).toContain("Story Context");
     expect(result.system).toContain("AI costs drop 90%");
     expect(result.token_count).toBeGreaterThan(0);
     expect(result.layers.rules).toBeGreaterThan(0);
-    expect(result.layers.post_type).toBeGreaterThan(0);
+    expect(result.layers.post_type).toBe(0);
   });
 
   it("includes coaching insights when present", () => {
@@ -43,7 +42,7 @@ describe("assemblePrompt", () => {
       title: "Contrarian hooks",
       prompt_text: "Lead with a take that challenges conventional wisdom",
     });
-    const result = assemblePrompt(db, "topic", "");
+    const result = assemblePrompt(db, "");
     expect(result.system).toContain("Coaching Insights");
     expect(result.system).toContain("Contrarian hooks");
     expect(result.layers.coaching).toBeGreaterThan(0);
@@ -57,7 +56,7 @@ describe("assemblePrompt", () => {
         prompt_text: "A".repeat(200), // ~50 tokens each
       });
     }
-    const result = assemblePrompt(db, "news", "story");
+    const result = assemblePrompt(db, "story");
     expect(result.token_count).toBeLessThanOrEqual(2200); // allow some flex for structure
   });
 
@@ -67,7 +66,7 @@ describe("assemblePrompt", () => {
     const freshDb = initDatabase(freshPath);
     seedDefaultRules(freshDb);
 
-    const result = assemblePrompt(freshDb, "insight", "My story");
+    const result = assemblePrompt(freshDb, "My story");
     expect(result.system).not.toContain("Coaching Insights");
     expect(result.layers.coaching).toBe(0);
 
@@ -75,10 +74,9 @@ describe("assemblePrompt", () => {
     try { fs.unlinkSync(freshPath); fs.unlinkSync(freshPath + "-wal"); fs.unlinkSync(freshPath + "-shm"); } catch {}
   });
 
-  it("handles all post types", () => {
-    for (const postType of ["news", "topic", "insight"] as const) {
-      const result = assemblePrompt(db, postType, "context");
-      expect(result.system).toContain("Post Type:");
-    }
+  it("does not include post type section", () => {
+    const result = assemblePrompt(db, "context");
+    expect(result.system).not.toContain("Post Type:");
+    expect(result.layers.post_type).toBe(0);
   });
 });

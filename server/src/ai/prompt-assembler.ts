@@ -2,7 +2,6 @@ import type Database from "better-sqlite3";
 import {
   getRules,
   getActiveCoachingInsights,
-  getPostTypeTemplate,
   type GenerationRule,
   type CoachingInsight,
 } from "../db/generate-queries.js";
@@ -69,29 +68,15 @@ function formatProfileLayer(profileText: string): string {
   return `## Author Profile\n\n${profileText}`;
 }
 
-function formatPostTypeLayer(template: string, postType: string): string {
-  const labels: Record<string, string> = {
-    news: "News Reaction",
-    topic: "Topic Exploration",
-    insight: "Professional Insight",
-  };
-  return `## Post Type: ${labels[postType] ?? postType}\n\n${template}`;
-}
-
 export function assemblePrompt(
   db: Database.Database,
-  postType: "news" | "topic" | "insight",
   storyContext: string
 ): AssembledPrompt {
   const rules = getRules(db);
   const insights = getActiveCoachingInsights(db);
-  const template = getPostTypeTemplate(db, postType);
 
   const rulesText = formatRulesLayer(rules);
   const coachingText = formatCoachingLayer(insights);
-  const postTypeText = template
-    ? formatPostTypeLayer(template.template_text, postType)
-    : "";
 
   // Author profile layer (always present if profile exists)
   const profile = getAuthorProfile(db);
@@ -100,13 +85,12 @@ export function assemblePrompt(
 
   let rulesTokens = estimateTokens(rulesText);
   let coachingTokens = estimateTokens(coachingText);
-  const postTypeTokens = estimateTokens(postTypeText);
 
   // If over budget, truncate coaching insights (profile has priority alongside rules)
-  const layerTotal = rulesTokens + coachingTokens + profileTokens + postTypeTokens;
+  const layerTotal = rulesTokens + coachingTokens + profileTokens;
   let finalCoachingText = coachingText;
   if (layerTotal > TOKEN_BUDGET && insights.length > 0) {
-    const available = TOKEN_BUDGET - rulesTokens - profileTokens - postTypeTokens;
+    const available = TOKEN_BUDGET - rulesTokens - profileTokens;
     if (available > 0) {
       // Progressively remove insights from the end until under budget
       let trimmedInsights = [...insights];
@@ -135,8 +119,6 @@ export function assemblePrompt(
     "",
     profileText,
     "",
-    postTypeText,
-    "",
     storyContext ? `## Story Context\n\n${storyContext}` : "",
   ]
     .filter((s) => s.length > 0)
@@ -149,7 +131,7 @@ export function assemblePrompt(
       rules: rulesTokens,
       coaching: coachingTokens,
       author_profile: profileTokens,
-      post_type: postTypeTokens,
+      post_type: 0,
     },
   };
 }
