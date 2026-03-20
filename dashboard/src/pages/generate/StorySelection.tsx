@@ -4,9 +4,17 @@ import StoryCard from "./components/StoryCard";
 
 type PostType = "news" | "topic" | "insight";
 
+interface TypeCache {
+  stories: GenStory[];
+  researchId: number | null;
+  articleCount: number;
+  sourceCount: number;
+}
+
 interface StorySelectionProps {
   gen: {
     postType: PostType;
+    cache: Record<PostType, TypeCache | null>;
     stories: GenStory[];
     articleCount: number;
     sourceCount: number;
@@ -26,36 +34,99 @@ const postTypes: { value: PostType; label: string }[] = [
   { value: "insight", label: "Insight" },
 ];
 
+const AUTO_MESSAGES = [
+  "Scanning news feeds...",
+  "Finding the best stories...",
+  "Researching in depth...",
+  "Preparing your stories...",
+];
+
+const MANUAL_MESSAGES = [
+  "Researching your topic...",
+  "Finding multiple perspectives...",
+  "Preparing your stories...",
+];
+
 export default function StorySelection({ gen, setGen, loading, setLoading, onNext }: StorySelectionProps) {
   const [showConnectionInput, setShowConnectionInput] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [topicInput, setTopicInput] = useState("");
+  const [loadingMessage, setLoadingMessage] = useState("");
+  const loadingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Auto-research once per day when visiting the Generate tab
-  const didMount = useRef(false);
+  // Start progressive loading messages
+  const startLoadingMessages = (isManual: boolean) => {
+    const messages = isManual ? MANUAL_MESSAGES : AUTO_MESSAGES;
+    let idx = 0;
+    setLoadingMessage(messages[0]);
+    loadingTimerRef.current = setInterval(() => {
+      idx += 1;
+      if (idx < messages.length) {
+        setLoadingMessage(messages[idx]);
+      } else {
+        if (loadingTimerRef.current) clearInterval(loadingTimerRef.current);
+      }
+    }, 3000);
+  };
+
+  const stopLoadingMessages = () => {
+    if (loadingTimerRef.current) {
+      clearInterval(loadingTimerRef.current);
+      loadingTimerRef.current = null;
+    }
+    setLoadingMessage("");
+  };
+
+  // Cleanup on unmount
   useEffect(() => {
-    if (didMount.current) return;
-    didMount.current = true;
-    if (gen.stories.length > 0 || loading) return;
-    const today = new Date().toDateString();
-    const lastResearch = localStorage.getItem("reachlab_last_research_date");
-    if (lastResearch === today) return;
-    doResearch(gen.postType);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => stopLoadingMessages();
+  }, []);
 
-  const doResearch = async (postType: PostType) => {
+  const switchPostType = (newType: PostType) => {
+    const cached = gen.cache[newType];
+    setGen((prev: any) => ({
+      ...prev,
+      postType: newType,
+      selectedStoryIndex: null,
+      // Sync top-level fields from cache
+      stories: cached?.stories ?? [],
+      researchId: cached?.researchId ?? null,
+      articleCount: cached?.articleCount ?? 0,
+      sourceCount: cached?.sourceCount ?? 0,
+    }));
+  };
+
+  const doResearch = async (postType: PostType, topic?: string) => {
+    const isManual = !!topic;
     setLoading(true);
     setError(null);
     setShowConnectionInput(false);
-    // Clear stories immediately so the loading spinner shows
+    startLoadingMessages(isManual);
+
+    // Collect current headlines to pass as avoid
+    const avoid = gen.stories.map((s) => s.headline).filter(Boolean);
+
+    // Clear cache for current type AND clear top-level fields
     setGen((prev: any) => ({
       ...prev,
-      stories: [],
-      selectedStoryIndex: null,
       postType,
+      stories: [],
+      researchId: null,
+      articleCount: 0,
+      sourceCount: 0,
+      selectedStoryIndex: null,
+      cache: { ...prev.cache, [postType]: null },
     }));
+
     try {
-      const res = await api.generateResearch(postType);
-      localStorage.setItem("reachlab_last_research_date", new Date().toDateString());
+      const res = await api.generateResearch(postType, topic || undefined, avoid.length > 0 ? avoid : undefined);
+      const newCache: TypeCache = {
+        stories: res.stories,
+        researchId: res.research_id,
+        articleCount: res.article_count,
+        sourceCount: res.source_count,
+      };
+      // Update both cache[postType] AND top-level fields
       setGen((prev: any) => ({
         ...prev,
         researchId: res.research_id,
@@ -63,14 +134,25 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
         articleCount: res.article_count,
         sourceCount: res.source_count,
         selectedStoryIndex: null,
-        postType,
+        cache: { ...prev.cache, [postType]: newCache },
       }));
     } catch (err: any) {
       console.error("Research failed:", err);
       setError(err.message ?? "Research failed. Try again.");
     } finally {
       setLoading(false);
+      stopLoadingMessages();
     }
+  };
+
+  const handleGoTopic = () => {
+    const trimmed = topicInput.trim();
+    if (!trimmed) return;
+    doResearch(gen.postType, trimmed);
+  };
+
+  const handleFindSomething = () => {
+    doResearch(gen.postType);
   };
 
   const handleGenerateDrafts = async () => {
@@ -94,7 +176,6 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
 
   const handleAutoPickAndGenerate = async () => {
     if (gen.researchId === null || gen.stories.length === 0) return;
-    // Auto-pick: select the first non-stretch story, or first story
     const bestIndex = gen.stories.findIndex((s) => !s.is_stretch);
     const pickIndex = bestIndex >= 0 ? bestIndex : 0;
     setGen((prev: any) => ({ ...prev, selectedStoryIndex: pickIndex }));
@@ -116,9 +197,11 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
     }
   };
 
+  const hasStories = gen.stories.length > 0;
+
   return (
     <div>
-      {/* Header row */}
+      {/* Header row: title + post type tabs */}
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-[15px] font-medium text-gen-text-0">
           Pick a story to write about
@@ -127,7 +210,10 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
           {postTypes.map((pt) => (
             <button
               key={pt.value}
-              onClick={() => doResearch(pt.value)}
+              onClick={() => {
+                if (gen.postType === pt.value) return;
+                switchPostType(pt.value);
+              }}
               disabled={loading}
               className={`px-3 py-1 rounded-lg text-[13px] font-medium transition-colors ${
                 gen.postType === pt.value
@@ -148,32 +234,60 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
         </div>
       )}
 
-      {/* Loading state */}
-      {loading && gen.stories.length === 0 && (
-        <div className="flex items-center justify-center py-20 text-gen-text-3 text-[14px]">
-          <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
-            <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-          </svg>
-          Researching stories...
-        </div>
-      )}
+      {/* Initial prompt UI — shown when no stories and not loading */}
+      {!loading && !hasStories && (
+        <div className="flex flex-col items-center justify-center py-16 gap-6">
+          {/* Manual topic input */}
+          <div className="w-full max-w-md">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={topicInput}
+                onChange={(e) => setTopicInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleGoTopic(); }}
+                placeholder="I want to write about..."
+                className="flex-1 bg-gen-bg-1 border border-gen-border-1 rounded-lg px-3 py-2 text-[13px] text-gen-text-0 placeholder:text-gen-text-3 focus:outline-none focus:border-gen-accent"
+              />
+              <button
+                onClick={handleGoTopic}
+                disabled={!topicInput.trim()}
+                className="px-4 py-2 bg-gen-text-0 text-gen-bg-0 text-[13px] font-medium rounded-[10px] hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Go
+              </button>
+            </div>
+          </div>
 
-      {/* Empty state */}
-      {!loading && gen.stories.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 text-gen-text-3 text-[14px]">
-          <p className="mb-4">Already researched today. Click below to research again.</p>
+          {/* Divider */}
+          <div className="flex items-center gap-3 w-full max-w-md">
+            <div className="flex-1 h-px bg-gen-border-1" />
+            <span className="text-[12px] text-gen-text-4">or</span>
+            <div className="flex-1 h-px bg-gen-border-1" />
+          </div>
+
+          {/* Auto-find button */}
           <button
-            onClick={() => doResearch(gen.postType)}
-            className="px-4 py-2 rounded-lg bg-gen-accent text-gen-bg-0 text-[13px] font-medium hover:opacity-90 transition-opacity"
+            onClick={handleFindSomething}
+            className="px-5 py-2.5 border border-gen-border-1 rounded-[10px] text-[13px] text-gen-text-2 hover:text-gen-text-0 hover:border-gen-border-2 transition-colors"
           >
-            Research stories
+            Find me something
           </button>
         </div>
       )}
 
+      {/* Loading state with progressive messages */}
+      {loading && !hasStories && (
+        <div className="flex items-center justify-center py-20 text-gen-text-3 text-[14px]">
+          <svg className="animate-spin h-4 w-4 mr-2 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+            <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+          </svg>
+          {loadingMessage || "Researching stories..."}
+        </div>
+      )}
+
       {/* Story cards */}
-      {gen.stories.length > 0 && (
+      {hasStories && (
         <div className="space-y-3">
           {gen.stories.map((story, i) => (
             <StoryCard
@@ -190,7 +304,7 @@ export default function StorySelection({ gen, setGen, loading, setLoading, onNex
       )}
 
       {/* Bottom bar */}
-      {gen.stories.length > 0 && (
+      {hasStories && (
         <div className="flex items-center justify-between mt-6 pt-4 border-t border-gen-border-1">
           <div className="flex items-center gap-3">
             <button

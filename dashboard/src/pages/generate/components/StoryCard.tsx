@@ -50,7 +50,19 @@ export default function StoryCard({ story, index, selected, onSelect }: StoryCar
                 STRETCH
               </span>
             )}
-            <span className="text-gen-text-3">{story.source}</span>
+            {story.source_url ? (
+              <a
+                href={story.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-gen-text-3 hover:text-gen-accent underline underline-offset-2 transition-colors"
+              >
+                {story.source}
+              </a>
+            ) : (
+              <span className="text-gen-text-3">{story.source}</span>
+            )}
             <span className="text-gen-text-4">{story.age}</span>
           </div>
 

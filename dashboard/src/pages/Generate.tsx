@@ -13,14 +13,25 @@ import type {
   GenCoachingInsight,
 } from "../api/client";
 
-interface GenerationState {
+type PostType = "news" | "topic" | "insight";
+
+interface TypeCache {
+  stories: GenStory[];
   researchId: number | null;
-  generationId: number | null;
-  postType: "news" | "topic" | "insight";
+  articleCount: number;
+  sourceCount: number;
+}
+
+interface GenerationState {
+  postType: PostType;
+  cache: Record<PostType, TypeCache | null>;
+  // Top-level convenience fields — synced from active cache entry
+  researchId: number | null;
   stories: GenStory[];
   articleCount: number;
   sourceCount: number;
   selectedStoryIndex: number | null;
+  generationId: number | null;
   drafts: GenDraft[];
   selectedDraftIndices: number[];
   combiningGuidance: string;
@@ -31,13 +42,14 @@ interface GenerationState {
 }
 
 const initialState: GenerationState = {
-  researchId: null,
-  generationId: null,
   postType: "news",
+  cache: { news: null, topic: null, insight: null },
+  researchId: null,
   stories: [],
   articleCount: 0,
   sourceCount: 0,
   selectedStoryIndex: null,
+  generationId: null,
   drafts: [],
   selectedDraftIndices: [],
   combiningGuidance: "",
