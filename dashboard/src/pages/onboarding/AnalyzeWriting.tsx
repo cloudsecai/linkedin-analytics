@@ -50,8 +50,19 @@ export default function AnalyzeWriting({ onNext, onSkip }: AnalyzeWritingProps) 
         setMessage(MESSAGES[msgIdx]);
       }, 4000);
 
-      // Poll for completion
+      // Poll for completion (max 5 minutes)
+      let pollCount = 0;
+      const MAX_POLLS = 150;
       pollRef.current = setInterval(async () => {
+        pollCount++;
+        if (pollCount > MAX_POLLS) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          if (msgRef.current) clearInterval(msgRef.current);
+          setError("Analysis is taking longer than expected. You can continue and check results in Settings later.");
+          await loadResults();
+          setPhase("done");
+          return;
+        }
         try {
           const { runs } = await api.getAiRuns();
           const latest = runs[0];

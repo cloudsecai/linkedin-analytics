@@ -151,8 +151,16 @@ export function registerSettingsRoutes(
     return { value };
   });
 
-  app.post("/api/settings/kv", async (request) => {
+  const ALLOWED_KV_KEYS = new Set(["onboarding_complete"]);
+
+  app.post("/api/settings/kv", async (request, reply) => {
     const { key, value } = request.body as { key: string; value: string };
+    if (!key || typeof key !== "string" || !ALLOWED_KV_KEYS.has(key)) {
+      return reply.status(400).send({ error: "Invalid setting key" });
+    }
+    if (typeof value !== "string" || value.length > 1000) {
+      return reply.status(400).send({ error: "Invalid value" });
+    }
     upsertSetting(db, key, value);
     return { ok: true };
   });

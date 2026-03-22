@@ -495,7 +495,7 @@ export default function Settings() {
       <div className="mt-8 pt-4 border-t border-border/30">
         <button
           onClick={async () => {
-            await api.setSetting("onboarding_complete", "");
+            await api.setSetting("onboarding_complete", "false");
             window.location.reload();
           }}
           className="text-[12px] text-text-muted hover:text-text-primary transition-colors"

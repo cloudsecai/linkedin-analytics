@@ -22,9 +22,9 @@ export default function App() {
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => {});
-    api.getSetting("onboarding_complete").then((val) => {
-      setOnboardingComplete(val === "true");
-    });
+    api.getSetting("onboarding_complete")
+      .then((val) => setOnboardingComplete(val === "true"))
+      .catch(() => setOnboardingComplete(true)); // On error, show main app
   }, []);
 
   useEffect(() => {
@@ -50,11 +50,18 @@ export default function App() {
     return (
       <OnboardingWizard
         onComplete={() => {
-          api.setSetting("onboarding_complete", "true").then(() => {
-            setOnboardingComplete(true);
-            window.location.hash = "Generate";
-            setTab("Generate");
-          });
+          api.setSetting("onboarding_complete", "true")
+            .then(() => {
+              setOnboardingComplete(true);
+              window.location.hash = "Generate";
+              setTab("Generate");
+            })
+            .catch(() => {
+              // Still transition even if persist fails — user can re-run from Settings
+              setOnboardingComplete(true);
+              window.location.hash = "Generate";
+              setTab("Generate");
+            });
         }}
       />
     );

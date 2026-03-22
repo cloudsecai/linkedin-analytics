@@ -22,7 +22,7 @@ export default function SetupComplete({ onFinish }: SetupCompleteProps) {
       setStats({
         topics: taxonomyRes.taxonomy.length,
         sources: sourcesRes.sources.filter((s) => s.enabled).length,
-        hasProfile: !!(profile as any)?.profile_text,
+        hasProfile: !!profile?.profile_text,
       });
     } catch {}
   };

@@ -707,12 +707,11 @@ export const api = {
   // ── Generic Settings (for onboarding gate, etc.) ────────
 
   getSetting: async (key: string): Promise<string | null> => {
-    try {
-      const res = await get<{ value: string }>(`/settings/kv/${encodeURIComponent(key)}`);
-      return res.value;
-    } catch {
-      return null;
-    }
+    const res = await fetch(`${BASE_URL}/settings/kv/${encodeURIComponent(key)}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    const data = await res.json();
+    return data.value;
   },
 
   setSetting: (key: string, value: string) =>

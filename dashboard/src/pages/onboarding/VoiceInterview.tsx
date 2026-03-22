@@ -62,8 +62,12 @@ export default function VoiceInterview({ onNext, onSkip }: VoiceInterviewProps) 
   };
 
   const handleSave = async () => {
-    await api.saveAuthorProfile(extractedText);
-    onNext();
+    try {
+      await api.saveAuthorProfile(extractedText);
+      onNext();
+    } catch (err: any) {
+      setExtractError(err.message ?? "Failed to save profile");
+    }
   };
 
   if (noApiKey) {

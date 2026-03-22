@@ -7,6 +7,7 @@ interface DiscoveredSource {
   feed_url: string | null;
   description: string;
   selected: boolean;
+  persisted: boolean;
 }
 
 interface SourceDiscoveryProps {
@@ -28,7 +29,7 @@ export default function SourceDiscovery({ onNext, onSkip }: SourceDiscoveryProps
   const discover = async () => {
     try {
       const result = await api.discoverSources();
-      setSources(result.map((s) => ({ ...s, selected: true })));
+      setSources(result.map((s) => ({ ...s, selected: true, persisted: false })));
       setPhase("selecting");
     } catch (err: any) {
       // Discovery failed — let user add manually or use defaults
@@ -58,6 +59,7 @@ export default function SourceDiscovery({ onNext, onSkip }: SourceDiscoveryProps
           feed_url: source.feed_url,
           description: "",
           selected: true,
+          persisted: true,
         },
       ]);
       setManualUrl("");
@@ -70,14 +72,10 @@ export default function SourceDiscovery({ onNext, onSkip }: SourceDiscoveryProps
 
   const saveAndContinue = async () => {
     setPhase("saving");
-    const selected = sources.filter((s) => s.selected && s.feed_url);
-    for (const source of selected) {
-      try {
-        await api.addSource(source.url);
-      } catch {
-        // Best effort — some may already exist
-      }
-    }
+    const toSave = sources.filter((s) => s.selected && s.feed_url && !s.persisted);
+    await Promise.allSettled(
+      toSave.map((source) => api.addSource(source.url))
+    );
     onNext();
   };
 
