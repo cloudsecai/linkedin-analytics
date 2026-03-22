@@ -168,7 +168,8 @@ export function buildApp(dbPath: string) {
     });
 
     // Sync health check: detect post count anomalies
-    if (payload.posts && payload.posts.length > 0) {
+    // Only check when post_metrics are also present (full sync), not partial content updates
+    if (payload.posts && payload.posts.length > 0 && payload.post_metrics && payload.post_metrics.length > 0) {
       const avgRow = db
         .prepare(
           `SELECT AVG(posts_count) as avg_count FROM (
