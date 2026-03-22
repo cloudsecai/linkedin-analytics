@@ -920,8 +920,9 @@ function formatPostLineDetailed(p: PostWithER, tz: string): string {
   const erStr = p.er !== null ? pct(p.er) : "N/A";
   const saves = p.saves ? `, ${p.saves} saves` : "";
   const sends = p.sends ? `, ${p.sends} sends` : "";
+  const newFollowers = p.new_followers ? `, ${p.new_followers} new followers` : "";
   const quad = p.quadrant ? ` ${QUADRANT_LABELS[p.quadrant]}` : "";
-  return `- ${preview} (${date}, ${p.content_type}) — ${p.impressions.toLocaleString()} impressions, ${werStr} weighted ER, ${erStr} standard ER, ${p.reactions} reactions, ${p.comments} comments${saves}${sends}${quad}`;
+  return `- ${preview} (${date}, ${p.content_type}) — ${p.impressions.toLocaleString()} impressions, ${werStr} weighted ER, ${erStr} standard ER, ${p.reactions} reactions, ${p.comments} comments${saves}${sends}${newFollowers}${quad}`;
 }
 
 // ── Main export ────────────────────────────────────────────
