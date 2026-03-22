@@ -13,6 +13,7 @@ export function initDatabase(dbPath: string): Database.Database {
 
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
+  db.pragma("busy_timeout = 5000");
   db.pragma("foreign_keys = ON");
 
   const schemaPath = path.join(__dirname, "schema.sql");
@@ -31,6 +32,12 @@ export function initDatabase(dbPath: string): Database.Database {
   }
 
   runMigrations(db);
+
+  // Clean up stale "running" AI pipelines from previous crashes
+  db.prepare(
+    `UPDATE ai_runs SET status = 'failed', completed_at = datetime('now')
+     WHERE status = 'running' AND started_at < datetime('now', '-1 hour')`
+  ).run();
 
   return db;
 }
