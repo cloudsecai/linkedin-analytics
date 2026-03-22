@@ -3,9 +3,10 @@
   "private": true,
   "scripts": {
     "start": "pnpm --filter linkedin-analytics-server start",
-    "dev": "NODE_ENV=development run-p dev:server dev:dashboard",
+    "dev": "pnpm run kill-existing; NODE_ENV=development run-p dev:server dev:dashboard",
     "dev:server": "NODE_ENV=development pnpm --filter linkedin-analytics-server dev",
     "dev:dashboard": "pnpm --filter linkedin-analytics-dashboard dev",
+    "kill-existing": "lsof -ti :3210,:3211 | xargs kill -9 2>/dev/null; true",
     "test": "pnpm --filter linkedin-analytics-server test",
     "build:dashboard": "pnpm --filter linkedin-analytics-dashboard build",
     "build:extension": "pnpm --filter extension build"
