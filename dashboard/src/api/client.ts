@@ -27,7 +27,10 @@ export interface Post {
   reactions: number | null;
   comments: number | null;
   reposts: number | null;
+  saves: number | null;
+  sends: number | null;
   engagement_rate: number | null;
+  weighted_engagement: number | null;
   post_category: string | null;
   topics: string | null;
 }
@@ -570,7 +573,7 @@ export const api = {
       return r.json() as Promise<GenResearchResponse>;
     }),
 
-  generateDrafts: (researchId: number, storyIndex: number, personalConnection?: string) =>
+  generateDrafts: (researchId: number, storyIndex: number, personalConnection?: string, length?: "short" | "medium" | "long") =>
     fetch(`${BASE_URL}/generate/drafts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -578,6 +581,7 @@ export const api = {
         research_id: researchId,
         story_index: storyIndex,
         personal_connection: personalConnection,
+        length,
       }),
     }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
@@ -698,6 +702,40 @@ export const api = {
     fetch(`${BASE_URL}/sources/${id}`, { method: "DELETE" }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json();
+    }),
+
+  // ── Generic Settings (for onboarding gate, etc.) ────────
+
+  getSetting: async (key: string): Promise<string | null> => {
+    try {
+      const res = await get<{ value: string }>(`/settings/kv/${encodeURIComponent(key)}`);
+      return res.value;
+    } catch {
+      return null;
+    }
+  },
+
+  setSetting: (key: string, value: string) =>
+    fetch(`${BASE_URL}/settings/kv`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value }),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json() as Promise<{ ok: boolean }>;
+    }),
+
+  // ── Source Discovery ────────────────────────────────────
+
+  discoverSources: (topics?: string[]) =>
+    fetch(`${BASE_URL}/sources/discover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topics }),
+    }).then(async (r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      const data = await r.json();
+      return data.sources as Array<{ name: string; url: string; feed_url: string | null; description: string }>;
     }),
 };
 

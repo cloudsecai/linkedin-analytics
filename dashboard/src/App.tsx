@@ -7,6 +7,7 @@ import Timing from "./pages/Timing";
 import Followers from "./pages/Followers";
 import Settings from "./pages/Settings";
 import Generate from "./pages/Generate";
+import OnboardingWizard from "./pages/onboarding/OnboardingWizard";
 
 const tabs = ["Overview", "Posts", "Coach", "Generate", "Timing", "Followers", "Settings"] as const;
 type Tab = (typeof tabs)[number];
@@ -17,9 +18,13 @@ export default function App() {
     return tabs.includes(hash) ? hash : "Overview";
   });
   const [health, setHealth] = useState<HealthData | null>(null);
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => {});
+    api.getSetting("onboarding_complete").then((val) => {
+      setOnboardingComplete(val === "true");
+    });
   }, []);
 
   useEffect(() => {
@@ -34,6 +39,26 @@ export default function App() {
   const hasErrors = health?.sources
     ? Object.values(health.sources).some((s) => s.status === "error")
     : false;
+
+  // Still loading onboarding status
+  if (onboardingComplete === null) {
+    return null;
+  }
+
+  // Show onboarding wizard for new users
+  if (!onboardingComplete) {
+    return (
+      <OnboardingWizard
+        onComplete={() => {
+          api.setSetting("onboarding_complete", "true").then(() => {
+            setOnboardingComplete(true);
+            window.location.hash = "Generate";
+            setTab("Generate");
+          });
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen">

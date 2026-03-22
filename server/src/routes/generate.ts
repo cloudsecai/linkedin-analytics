@@ -105,10 +105,11 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
   // ── Drafts ───────────────────────────────────────────────
 
   app.post("/api/generate/drafts", async (request, reply) => {
-    const { research_id, story_index, personal_connection } = request.body as {
+    const { research_id, story_index, personal_connection, length } = request.body as {
       research_id: number;
       story_index: number;
       personal_connection?: string;
+      length?: "short" | "medium" | "long";
     };
 
     const research = getResearch(db, research_id);
@@ -131,7 +132,8 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
         db,
         logger,
         stories[story_index],
-        personal_connection
+        personal_connection,
+        length
       );
 
       const generationId = insertGeneration(db, {
@@ -748,5 +750,28 @@ Return JSON only:
       return reply.status(404).send({ error: "Source not found" });
     }
     return { ok: true };
+  });
+
+  // ── Source Discovery ─────────────────────────────────────
+
+  app.post("/api/sources/discover", async (request) => {
+    const { topics } = request.body as { topics?: string[] };
+
+    // Fall back to taxonomy topics if none provided
+    let topicList = topics;
+    if (!topicList || topicList.length === 0) {
+      const rows = db
+        .prepare("SELECT name FROM ai_taxonomy ORDER BY name")
+        .all() as { name: string }[];
+      topicList = rows.map((r) => r.name);
+    }
+
+    if (topicList.length === 0) {
+      return { sources: [] };
+    }
+
+    const { discoverSources } = await import("../ai/source-discoverer.js");
+    const sources = await discoverSources(topicList);
+    return { sources };
   });
 }

@@ -140,6 +140,23 @@ export function registerSettingsRoutes(
     return { ok: true };
   });
 
+  // ── Generic setting getter ──────────────────────────────
+
+  app.get("/api/settings/kv/:key", async (request, reply) => {
+    const { key } = request.params as { key: string };
+    const value = getSetting(db, key);
+    if (value === undefined || value === null) {
+      return reply.status(404).send({ error: "Setting not found" });
+    }
+    return { value };
+  });
+
+  app.post("/api/settings/kv", async (request) => {
+    const { key, value } = request.body as { key: string; value: string };
+    upsertSetting(db, key, value);
+    return { ok: true };
+  });
+
   // ── Sync health ──────────────────────────────────────────
 
   app.get("/api/settings/sync-health", async () => {
