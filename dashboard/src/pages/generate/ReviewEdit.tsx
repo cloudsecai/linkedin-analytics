@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
 import { api, type GenDraft, type GenCoachCheckQuality, type GenStory } from "../../api/client";
-import ExpertiseCard from "./components/ExpertiseCard";
 import AlignmentCard from "./components/AlignmentCard";
 import PostDetailsCard from "./components/PostDetailsCard";
 
@@ -24,14 +23,15 @@ interface ReviewEditProps {
   loading: boolean;
   setLoading: (v: boolean) => void;
   onBack: () => void;
-  onReset: () => void;
+  onRetro?: () => void;
 }
 
-export default function ReviewEdit({ gen, setGen, loading, setLoading, onBack, onReset }: ReviewEditProps) {
+export default function ReviewEdit({ gen, setGen, loading, setLoading, onBack, onRetro }: ReviewEditProps) {
   const [localDraft, setLocalDraft] = useState(gen.finalDraft);
   const [chatInput, setChatInput] = useState("");
   const [copied, setCopied] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -111,55 +111,92 @@ export default function ReviewEdit({ gen, setGen, loading, setLoading, onBack, o
   const expertiseItems = gen.qualityGate?.expertise_needed ?? [];
   const alignmentItems = gen.qualityGate?.alignment ?? [];
 
+  // Build contextual placeholder from first unaddressed expertise item
+  const hasConversation = gen.chatMessages.length > 0;
+  const placeholderText = !hasConversation && expertiseItems.length > 0
+    ? expertiseItems[0].question
+    : "Tell the AI what to change...";
+
+  // Build initial expertise prompts as conversation starters (shown before any user messages)
+  const expertisePrompts = !hasConversation && expertiseItems.length > 0
+    ? expertiseItems.map((item) => ({
+        area: item.area,
+        question: item.question,
+      }))
+    : [];
+
   return (
     <div>
       <div className="flex gap-6">
         {/* Editor panel */}
         <div className="flex-1 min-w-0">
-          <textarea
-            ref={textareaRef}
-            value={localDraft}
-            onChange={(e) => setLocalDraft(e.target.value)}
-            className="w-full bg-transparent text-[15.5px] leading-[1.85] text-gen-text-1 resize-none focus:outline-none min-h-[300px]"
-            style={{ fontFamily: "var(--font-sans)" }}
-          />
-          <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gen-border-1">
-            <span className="text-[12px] text-gen-text-3">{wordCount} words</span>
+          <div
+            className={`rounded-xl border transition-colors p-5 ${
+              isFocused
+                ? "border-gen-accent/40 bg-gen-bg-1/50"
+                : "border-gen-border-1 bg-gen-bg-1/30 hover:border-gen-border-2"
+            }`}
+          >
+            <textarea
+              ref={textareaRef}
+              value={localDraft}
+              onChange={(e) => setLocalDraft(e.target.value)}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+              className="w-full bg-transparent text-[15.5px] leading-[1.85] text-gen-text-1 resize-none focus:outline-none min-h-[300px]"
+              style={{ fontFamily: "var(--font-sans)" }}
+            />
           </div>
-        </div>
 
-        {/* Right panel */}
-        <div className="w-[340px] flex-shrink-0 flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
-          {/* Expertise cards */}
-          <ExpertiseCard
-            items={expertiseItems}
-            onClickItem={(question) => setChatInput(question)}
-          />
+          {/* Action buttons + word count */}
+          <div className="flex items-center justify-between mt-3">
+            <div className="flex items-center gap-3">
+              <span className="text-[12px] text-gen-text-3">{wordCount} words</span>
+              <button onClick={onBack} className="text-[12px] text-gen-text-3 hover:text-gen-text-1 transition-colors">
+                Back to drafts
+              </button>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={handleCopy} className="px-4 py-2 bg-gen-bg-3 border border-gen-border-2 text-gen-text-1 text-[13px] font-medium rounded-[10px] hover:border-gen-border-3 transition-colors">
+                {copied ? "Copied!" : "Copy to clipboard"}
+              </button>
+              <button onClick={handleOpenLinkedIn} className="px-4 py-2 bg-gen-text-0 text-gen-bg-0 text-[13px] font-medium rounded-[10px] hover:bg-white transition-colors">
+                Open in LinkedIn
+              </button>
+              {onRetro && (
+                <button onClick={onRetro} className="px-4 py-2 bg-gen-bg-3 border border-gen-border-2 text-gen-text-2 text-[13px] font-medium rounded-[10px] hover:border-gen-accent/40 hover:text-gen-accent transition-colors">
+                  Post Retro
+                </button>
+              )}
+            </div>
+          </div>
 
-          {/* Chat thread */}
-          {gen.chatMessages.length > 0 && (
-            <div className="bg-gen-bg-2 border border-gen-border-2 rounded-xl p-4">
-              <h4 className="text-[13px] font-semibold text-gen-text-0 mb-3">Conversation</h4>
-              <div className="space-y-3 max-h-[300px] overflow-y-auto">
+          {/* Conversation area */}
+          <div className="mt-4 space-y-3">
+            {/* Expertise prompts — shown before any conversation as questions from the AI */}
+            {expertisePrompts.length > 0 && (
+              <div className="space-y-2">
+                {expertisePrompts.map((item, i) => (
+                  <div key={i} className="pl-3 border-l-2 border-gen-accent/30">
+                    <p className="text-[11px] font-medium text-gen-accent mb-0.5">{item.area}</p>
+                    <p className="text-[12.5px] text-gen-text-2 leading-snug">{item.question}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Chat history */}
+            {gen.chatMessages.length > 0 && (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
                 {gen.chatMessages.map((msg, i) => (
-                  <div key={i} className={`text-[12px] leading-snug ${msg.role === "user" ? "text-gen-text-1" : "text-gen-text-2 pl-3 border-l-2 border-gen-accent/30"}`}>
+                  <div key={i} className={`text-[12.5px] leading-snug ${msg.role === "user" ? "text-gen-text-1" : "text-gen-text-2 pl-3 border-l-2 border-gen-accent/30"}`}>
                     {msg.content}
                   </div>
                 ))}
                 <div ref={chatEndRef} />
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Chat error */}
-          {chatError && (
-            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-[12px] text-red-400">
-              {chatError}
-            </div>
-          )}
-
-          {/* Chat input */}
-          <div className="space-y-2">
             {/* Shortcut chips */}
             <div className="flex gap-1.5">
               {shortcutChips.map((chip) => (
@@ -167,63 +204,55 @@ export default function ReviewEdit({ gen, setGen, loading, setLoading, onBack, o
                   key={chip.label}
                   onClick={() => sendMessage(chip.prompt)}
                   disabled={loading}
-                  className="px-3 py-1.5 bg-gen-bg-3 border border-gen-border-2 text-gen-text-2 text-[11px] rounded-lg hover:border-gen-border-3 transition-colors disabled:opacity-50"
+                  className="px-3 py-1.5 bg-gen-bg-3 border border-gen-border-2 text-gen-text-2 text-[11px] rounded-lg hover:border-gen-border-3 hover:text-gen-text-1 transition-colors disabled:opacity-50"
                 >
                   {chip.label}
                 </button>
               ))}
             </div>
+
+            {/* Chat input */}
             <div className="flex gap-2">
               <input
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && chatInput.trim()) sendMessage(chatInput);
+                  if (e.key === "Enter" && chatInput.trim()) {
+                    e.preventDefault();
+                    sendMessage(chatInput);
+                  }
                 }}
-                placeholder="Tell the AI what to change..."
-                className="flex-1 bg-gen-bg-2 border border-gen-border-2 rounded-lg px-3 py-2 text-[12px] text-gen-text-1 placeholder:text-gen-text-3 focus:outline-none focus:border-gen-accent-border"
+                placeholder={placeholderText}
+                className="flex-1 bg-gen-bg-2 border border-gen-border-2 rounded-lg px-3 py-2 text-[13px] text-gen-text-1 placeholder:text-gen-text-3 focus:outline-none focus:border-gen-accent-border"
               />
               <button
                 onClick={() => { if (chatInput.trim()) sendMessage(chatInput); }}
                 disabled={!chatInput.trim() || loading}
-                className="px-3 py-2 bg-gen-bg-3 border border-gen-border-2 text-gen-text-1 text-[12px] rounded-lg hover:border-gen-border-3 transition-colors disabled:opacity-40"
+                className="px-4 py-2 bg-gen-accent text-white text-[12px] font-medium rounded-lg transition-colors disabled:opacity-40 disabled:bg-gen-bg-3 disabled:text-gen-text-3"
               >
-                Send
+                {loading ? "..." : "Send"}
               </button>
             </div>
+
+            {/* Chat error */}
+            {chatError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-[12px] text-red-400">
+                {chatError}
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Alignment */}
+        {/* Right panel — alignment + post details */}
+        <div className="w-[300px] flex-shrink-0 flex flex-col gap-4">
           <AlignmentCard items={alignmentItems} />
-
-          {/* Post details */}
           <PostDetailsCard
             storyHeadline={storyHeadline}
             draftsUsed={selectedDraftTypes}
             structureLabel={structureLabel}
             wordCount={wordCount}
           />
-        </div>
-      </div>
-
-      {/* Bottom bar */}
-      <div className="flex items-center justify-between mt-6 pt-4 border-t border-gen-border-1">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="text-[13px] text-gen-text-2 hover:text-gen-text-0 transition-colors">
-            Back to drafts
-          </button>
-          <button onClick={onReset} className="text-[13px] text-gen-text-3 hover:text-gen-text-1 transition-colors">
-            Start new
-          </button>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={handleCopy} className="px-4 py-2 bg-gen-bg-3 border border-gen-border-2 text-gen-text-1 text-[13px] font-medium rounded-[10px] hover:border-gen-border-3 transition-colors">
-            {copied ? "Copied!" : "Copy to clipboard"}
-          </button>
-          <button onClick={handleOpenLinkedIn} className="px-4 py-2 bg-gen-text-0 text-gen-bg-0 text-[13px] font-medium rounded-[10px] hover:bg-white transition-colors">
-            Open in LinkedIn
-          </button>
         </div>
       </div>
     </div>

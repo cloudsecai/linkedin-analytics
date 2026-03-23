@@ -21,6 +21,14 @@ const VARIATION_INSTRUCTIONS: Record<string, string> = {
     "Write a FUTURE-FACING variation. Extrapolate from this story to what it means 2-5 years out. Make a specific prediction grounded in the current evidence. Be bold but defensible.",
 };
 
+export type DraftLength = "short" | "medium" | "long";
+
+const LENGTH_INSTRUCTIONS: Record<DraftLength, string> = {
+  short: "Target approximately 80-120 words. Be extremely concise — one sharp hook, one clear argument, one strong close. Cut everything that isn't load-bearing.",
+  medium: "Target approximately 150-250 words. One clear argument with enough room to develop the idea and provide one key piece of supporting evidence.",
+  long: "Target approximately 300-450 words. Develop the argument fully with evidence, examples, and nuance. Still one idea — just explored in depth.",
+};
+
 /**
  * Generate 3 draft variations (contrarian, operator, future-facing) for a selected story.
  */
@@ -29,12 +37,14 @@ export async function generateDrafts(
   db: Database.Database,
   logger: AiLogger,
   story: Story,
-  personalConnection?: string
+  personalConnection?: string,
+  length?: DraftLength
 ): Promise<DraftResult> {
   const storyContext = `**${story.headline}**\n${story.summary}\nSource: ${story.source} | ${story.age}\nPossible angles: ${story.angles.join("; ")}`;
   const connectionContext = personalConnection
     ? `\n\n## Personal Connection\n${personalConnection}`
     : "";
+  const lengthContext = length ? `\n\n## Length\n${LENGTH_INSTRUCTIONS[length]}` : "";
   const assembled = assemblePrompt(db, storyContext);
 
   const draftPromises = Object.entries(VARIATION_INSTRUCTIONS).map(
@@ -47,7 +57,7 @@ export async function generateDrafts(
         messages: [
           {
             role: "user",
-            content: `${instruction}${connectionContext}
+            content: `${instruction}${connectionContext}${lengthContext}
 
 Return JSON:
 {

@@ -474,7 +474,7 @@ export const DEFAULT_RULES: Array<{ category: string; rule_text: string; example
   { category: "structure_formatting", rule_text: "Open with friction, a claim, or a surprise — never with context or a question", example_text: 'Favor: "I fired our best engineer last month." — Avoid: "Have you ever wondered about team dynamics?"', sort_order: 1 },
   { category: "structure_formatting", rule_text: "Close with a process question that invites practitioner responses, not opinion questions", example_text: 'Favor: "What\'s your process for X?" — Avoid: "What do you think?"', sort_order: 2 },
   { category: "structure_formatting", rule_text: "End by extending the idea forward, never by summarizing or recapping", sort_order: 3 },
-  { category: "structure_formatting", rule_text: "Use line breaks between every 1-2 sentences for mobile readability", sort_order: 4 },
+  { category: "structure_formatting", rule_text: "Vary paragraph length for rhythm: single-sentence paragraphs for emphasis, 2-3 sentence paragraphs for flow. Mechanical line breaks after every sentence kills pacing.", sort_order: 4 },
   { category: "structure_formatting", rule_text: "Front-load the practical application, then provide theory if needed", sort_order: 5 },
   // Anti-AI tropes
   { category: "anti_ai_tropes", rule_text: "No hedge words: actually, maybe, just, perhaps, simply, basically, essentially, literally", sort_order: 0 },

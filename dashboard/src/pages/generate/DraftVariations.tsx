@@ -45,7 +45,7 @@ export default function DraftVariations({ gen, setGen, loading, setLoading, onBa
       setGen((prev: any) => ({
         ...prev,
         finalDraft: res.final_draft,
-        qualityGate: res.quality_gate,
+        qualityGate: res.quality,
       }));
       onNext();
     } catch (err) {

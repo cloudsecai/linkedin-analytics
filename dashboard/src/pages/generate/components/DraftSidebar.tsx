@@ -56,17 +56,19 @@ export default function DraftSidebar({
                   >
                     <span className="text-[11px] text-gen-text-3">Include</span>
                     <button
+                      role="switch"
+                      aria-checked={isIncluded}
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggleInclude(i);
                       }}
-                      className={`w-9 h-5 rounded-full transition-colors relative overflow-hidden ${
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                         isIncluded ? "bg-gen-accent" : "bg-gen-bg-3"
                       }`}
                     >
                       <span
-                        className={`absolute top-[3px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${
-                          isIncluded ? "translate-x-[19px]" : "translate-x-[3px]"
+                        className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                          isIncluded ? "translate-x-[18px]" : "translate-x-[3px]"
                         }`}
                       />
                     </button>

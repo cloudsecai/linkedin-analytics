@@ -15,6 +15,7 @@ import {
   type TopicPerformance,
   type HookPerformance,
   type ImageSubtypePerformance,
+  type AnalysisStatus,
 } from "../api/client";
 
 type CoachTab = "actions" | "insights" | "deep-dive";
@@ -45,6 +46,27 @@ function getConfidenceLabel(c: number | string): { label: string; dotClass: stri
 
 function formatCategory(s: string): string {
   return s.replace(/_/g, " ");
+}
+
+function formatTimeAgo(isoDate: string): string {
+  const ms = Date.now() - new Date(isoDate + (isoDate.endsWith("Z") ? "" : "Z")).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function formatTimeUntil(isoDate: string): string {
+  const ms = new Date(isoDate).getTime() - Date.now();
+  if (ms <= 0) return "soon";
+  const hours = Math.floor(ms / 3600000);
+  if (hours < 1) return "< 1h";
+  if (hours < 24) return `in ${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `in ${days}d`;
 }
 
 function fmtNum(n: number | null | undefined): string {
@@ -1070,6 +1092,7 @@ function PerformanceTable({
 export default function Coach() {
   const [tab, setTab] = useState<CoachTab>("actions");
   const [refreshing, setRefreshing] = useState(false);
+  const [status, setStatus] = useState<AnalysisStatus | null>(null);
 
   // Actions data
   const [activeRecs, setActiveRecs] = useState<Recommendation[]>([]);
@@ -1092,6 +1115,9 @@ export default function Coach() {
   const [imageSubtypes, setImageSubtypes] = useState<ImageSubtypePerformance[]>([]);
 
   const loadAll = () => {
+    // Status
+    api.insightsStatus().then(setStatus).catch(() => {});
+
     // Actions
     api.recommendationsWithCooldown().then((r) => {
       setActiveRecs(r.active);
@@ -1115,14 +1141,43 @@ export default function Coach() {
     api.deepDiveImageSubtypes().then((r) => setImageSubtypes(r.subtypes)).catch(() => {});
   };
 
-  useEffect(loadAll, []);
+  useEffect(() => {
+    loadAll();
+    // If pipeline is running on load, poll until done
+    api.insightsStatus().then((s) => {
+      if (s.running) {
+        setRefreshing(true);
+        const poll = setInterval(() => {
+          api.insightsStatus().then((s2) => {
+            setStatus(s2);
+            if (!s2.running) {
+              clearInterval(poll);
+              setRefreshing(false);
+              loadAll();
+            }
+          }).catch(() => {});
+        }, 3000);
+      }
+    }).catch(() => {});
+  }, []);
 
-  const handleRefresh = () => {
+  const handleRefresh = (force = false) => {
     setRefreshing(true);
-    api.insightsRefresh()
-      .then(() => { loadAll(); })
-      .catch(() => {})
-      .finally(() => setRefreshing(false));
+    api.insightsRefresh(force)
+      .then(() => {
+        // Poll for completion
+        const poll = setInterval(() => {
+          api.insightsStatus().then((s) => {
+            setStatus(s);
+            if (!s.running) {
+              clearInterval(poll);
+              setRefreshing(false);
+              loadAll();
+            }
+          }).catch(() => {});
+        }, 3000);
+      })
+      .catch(() => setRefreshing(false));
   };
 
   const handleResolve = (id: number, type: "accepted" | "dismissed") => {
@@ -1144,10 +1199,17 @@ export default function Coach() {
   const handleAcceptSuggestion = async (_index: number, suggestion: PromptSuggestion) => {
     const currentPromptRes = await api.getWritingPrompt().catch(() => ({ text: null }));
     const currentText = currentPromptRes.text ?? "";
-    const newText = currentText.includes(suggestion.current)
-      ? currentText.replace(suggestion.current, suggestion.suggested)
-      : currentText + "\n" + suggestion.suggested;
+    let newText: string;
+    if (currentText.includes(suggestion.current)) {
+      newText = currentText.replace(suggestion.current, suggestion.suggested);
+    } else if (currentText.includes(suggestion.suggested)) {
+      // Already applied — don't duplicate
+      return;
+    } else {
+      newText = currentText + "\n" + suggestion.suggested;
+    }
     await api.saveWritingPrompt(newText, "ai_suggestion", suggestion.evidence).catch(() => {});
+    setPromptSuggestions(null); // Clear the UI immediately
   };
 
   const tabs: { key: CoachTab; label: string; count?: number }[] = [
@@ -1181,13 +1243,28 @@ export default function Coach() {
             )}
           </button>
         ))}
-        <div className="ml-auto py-2.5">
+        <div className="ml-auto py-2.5 flex items-center gap-3">
+          {status && (
+            <span className="text-[11px] text-text-muted">
+              {status.running
+                ? "Analyzing..."
+                : status.last_run
+                  ? `Last run ${formatTimeAgo(status.last_run.completed_at)}`
+                  : "Never run"}
+              {!status.running && status.next_auto_regen && (
+                <> · Next auto-regen {formatTimeUntil(status.next_auto_regen)}</>
+              )}
+              {!status.running && status.schedule === "off" && (
+                <> · Auto-regen off</>
+              )}
+            </span>
+          )}
           <button
-            onClick={handleRefresh}
+            onClick={() => handleRefresh(true)}
             disabled={refreshing}
             className="px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent/8 transition-colors disabled:opacity-50"
           >
-            {refreshing ? "Refreshing..." : "Refresh AI \u21BB"}
+            {refreshing ? "Regenerating..." : "Regenerate"}
           </button>
         </div>
       </div>

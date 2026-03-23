@@ -92,10 +92,19 @@ export default function ExtensionSetup({ onNext, onSkip }: ExtensionSetupProps) 
         </div>
         <div className="flex gap-3 items-start">
           <span className="w-6 h-6 rounded-full bg-accent/10 text-accent text-[13px] font-semibold flex items-center justify-center flex-shrink-0 mt-0.5">3</span>
-          <p className="text-[13px] text-text-primary">
-            Click &ldquo;Load unpacked&rdquo; and select the{" "}
-            <code className="text-[12px] bg-surface-2 px-1.5 py-0.5 rounded">extension/</code> folder
-          </p>
+          <div>
+            <p className="text-[13px] text-text-primary">
+              Click &ldquo;Load unpacked&rdquo; and select the{" "}
+              <code className="text-[12px] bg-surface-2 px-1.5 py-0.5 rounded">extension</code> folder inside your ReachLab directory
+            </p>
+            <p className="text-[11px] text-text-muted mt-1">
+              {navigator.platform.startsWith("Mac")
+                ? "Usually ~/code/linkedin/extension or wherever you cloned ReachLab"
+                : navigator.platform.startsWith("Win")
+                  ? "Usually C:\\Users\\YourName\\code\\linkedin\\extension or wherever you cloned ReachLab"
+                  : "Usually ~/code/linkedin/extension or wherever you cloned ReachLab"}
+            </p>
+          </div>
         </div>
       </div>
 

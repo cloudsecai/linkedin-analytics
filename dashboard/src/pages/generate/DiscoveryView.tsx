@@ -12,6 +12,7 @@ interface DiscoveryViewProps {
     researchId: number | null;
     selectedStoryIndex: number | null;
     personalConnection: string;
+    draftLength: "short" | "medium" | "long";
   };
   setGen: (fn: (prev: any) => any) => void;
   loading: boolean;
@@ -276,7 +277,7 @@ export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext
     if (gen.selectedStoryIndex === null || gen.researchId === null) return;
     setLoading(true);
     try {
-      const res = await api.generateDrafts(gen.researchId, gen.selectedStoryIndex, gen.personalConnection || undefined);
+      const res = await api.generateDrafts(gen.researchId, gen.selectedStoryIndex, gen.personalConnection || undefined, gen.draftLength);
       setGen((prev: any) => ({
         ...prev,
         generationId: res.generation_id,
@@ -449,13 +450,30 @@ export default function DiscoveryView({ gen, setGen, loading, setLoading, onNext
             <span className="text-[12px] text-gen-text-3">
               {gen.articleCount} articles from {gen.sourceCount} sources
             </span>
-            <button
-              onClick={handleGenerateDrafts}
-              disabled={gen.selectedStoryIndex === null || loading}
-              className="px-4 py-2 bg-gen-text-0 text-gen-bg-0 text-[13px] font-medium rounded-[10px] hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Generate drafts
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center bg-gen-bg-2 rounded-lg p-0.5">
+                {(["short", "medium", "long"] as const).map((len) => (
+                  <button
+                    key={len}
+                    onClick={() => setGen((prev: any) => ({ ...prev, draftLength: len }))}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors capitalize ${
+                      gen.draftLength === len
+                        ? "bg-gen-bg-0 text-gen-text-0 shadow-sm"
+                        : "text-gen-text-3 hover:text-gen-text-1"
+                    }`}
+                  >
+                    {len}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={handleGenerateDrafts}
+                disabled={gen.selectedStoryIndex === null || loading}
+                className="px-4 py-2 bg-gen-text-0 text-gen-bg-0 text-[13px] font-medium rounded-[10px] hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Generate drafts
+              </button>
+            </div>
           </div>
         </div>
       )}

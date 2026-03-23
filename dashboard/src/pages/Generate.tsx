@@ -6,7 +6,7 @@ import ReviewEdit from "./generate/ReviewEdit";
 import Rules from "./generate/Rules";
 import Sources from "./generate/Sources";
 import GenerationHistory from "./generate/GenerationHistory";
-import CoachingSyncModal from "./generate/CoachingSyncModal";
+import PostRetro from "./generate/PostRetro";
 import {
   api,
   type GenStory,
@@ -32,6 +32,7 @@ interface GenerationState {
   selectedDraftIndices: number[];
   combiningGuidance: string;
   personalConnection: string;
+  draftLength: "short" | "medium" | "long";
   // Review
   finalDraft: string;
   qualityGate: GenCoachCheckQuality | null;
@@ -53,6 +54,7 @@ const initialState: GenerationState = {
   selectedDraftIndices: [],
   combiningGuidance: "",
   personalConnection: "",
+  draftLength: "medium",
   finalDraft: "",
   qualityGate: null,
   appliedInsights: [],
@@ -61,10 +63,10 @@ const initialState: GenerationState = {
 
 export default function Generate() {
   const [subTab, setSubTab] = useState<GenerateSubTab>("Generate");
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [gen, setGen] = useState<GenerationState>(initialState);
   const [loading, setLoading] = useState(false);
-  const [showCoachingSync, setShowCoachingSync] = useState(false);
+
 
   const resetPipeline = () => {
     setGen(initialState);
@@ -80,12 +82,14 @@ export default function Generate() {
             setGen((prev) => ({ ...prev, discoveryTopics: null }));
           }
         }} />
-        <button
-          onClick={() => setShowCoachingSync(true)}
-          className="text-[12px] text-gen-text-3 hover:text-gen-accent transition-colors cursor-pointer"
-        >
-          Coaching sync
-        </button>
+        {step > 1 && subTab === "Generate" && (
+          <button
+            onClick={resetPipeline}
+            className="text-[12px] text-gen-text-3 hover:text-gen-accent transition-colors cursor-pointer"
+          >
+            Start new
+          </button>
+        )}
       </div>
 
       <div className="mt-6">
@@ -115,7 +119,14 @@ export default function Generate() {
             loading={loading}
             setLoading={setLoading}
             onBack={() => setStep(2)}
-            onReset={resetPipeline}
+            onRetro={() => setStep(4)}
+          />
+        )}
+        {subTab === "Generate" && step === 4 && gen.generationId && (
+          <PostRetro
+            generationId={gen.generationId}
+            draftText={gen.finalDraft}
+            onBack={() => setStep(3)}
           />
         )}
         {subTab === "Rules" && <Rules />}
@@ -168,10 +179,6 @@ export default function Generate() {
           }
         }} />}
       </div>
-
-      {showCoachingSync && (
-        <CoachingSyncModal onClose={() => setShowCoachingSync(false)} />
-      )}
     </div>
   );
 }

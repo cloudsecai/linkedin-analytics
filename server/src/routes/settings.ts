@@ -104,6 +104,13 @@ export function registerSettingsRoutes(
       source,
       evidence: body.evidence ?? null,
     });
+    // Clear prompt suggestions so applied suggestions don't reappear
+    if (source === "ai_suggestion") {
+      db.prepare(
+        `UPDATE ai_overview SET prompt_suggestions_json = NULL
+         WHERE id = (SELECT MAX(id) FROM ai_overview)`
+      ).run();
+    }
     return { ok: true };
   });
 

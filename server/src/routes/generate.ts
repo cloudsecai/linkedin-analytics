@@ -37,6 +37,7 @@ import { combineDrafts } from "../ai/combiner.js";
 import { coachCheck } from "../ai/coach-check.js";
 import { analyzeCoaching } from "../ai/coaching-analyzer.js";
 import { discoverTopics } from "../ai/discovery.js";
+import { analyzeRetro } from "../ai/retro.js";
 import { discoverFeeds, discoverFeedsByGuessing } from "../ai/feed-discoverer.js";
 import { type RssSource } from "../ai/rss-fetcher.js";
 
@@ -546,6 +547,67 @@ Return JSON only:
     return { ok: true };
   });
 
+  // ── Retro: compare draft vs published ───────────────────
+
+  app.post("/api/generate/history/:id/retro", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { published_text: string };
+    if (!body.published_text?.trim()) {
+      return reply.status(400).send({ error: "published_text is required" });
+    }
+
+    const gen = getGeneration(db, Number(id));
+    if (!gen) {
+      return reply.status(404).send({ error: "Generation not found" });
+    }
+    if (!gen.final_draft) {
+      return reply.status(400).send({ error: "Generation has no final draft to compare against" });
+    }
+
+    const client = getClient();
+
+    // Get existing rules for context
+    const rules = getRules(db);
+    const ruleTexts = rules.filter(r => r.enabled).map(r => r.rule_text);
+
+    const { analysis, input_tokens, output_tokens } = await analyzeRetro(
+      client, gen.final_draft, body.published_text.trim(), ruleTexts
+    );
+
+    // Store the published text and analysis
+    db.prepare(
+      `UPDATE generations SET published_text = ?, retro_json = ?, retro_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+    ).run(body.published_text.trim(), JSON.stringify(analysis), Number(id));
+
+    // Update status to published
+    updateGeneration(db, Number(id), { status: "published" });
+
+    return { analysis, input_tokens, output_tokens };
+  });
+
+  // Get retro results for a generation
+  app.get("/api/generate/history/:id/retro", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const gen = getGeneration(db, Number(id));
+    if (!gen) {
+      return reply.status(404).send({ error: "Generation not found" });
+    }
+    const row = db.prepare(
+      "SELECT published_text, retro_json, retro_at FROM generations WHERE id = ?"
+    ).get(Number(id)) as { published_text: string | null; retro_json: string | null; retro_at: string | null } | undefined;
+
+    if (!row?.retro_json) {
+      return { retro: null };
+    }
+    return {
+      retro: {
+        published_text: row.published_text,
+        analysis: JSON.parse(row.retro_json),
+        retro_at: row.retro_at,
+      }
+    };
+  });
+
   // ── Coaching Sync ────────────────────────────────────────
 
   app.post("/api/generate/coaching/analyze", async (request, reply) => {
@@ -657,7 +719,15 @@ Return JSON only:
     const logger = new AiLogger(db, runId);
 
     try {
-      const result = await discoverTopics(client, db, logger);
+      // Pass previously discovered topics so the LLM avoids repeating them
+      const prevRaw = db.prepare("SELECT value FROM settings WHERE key = 'last_discovery_labels'").get() as { value: string } | undefined;
+      const previousLabels = prevRaw ? JSON.parse(prevRaw.value) as string[] : [];
+
+      const result = await discoverTopics(client, db, logger, previousLabels);
+
+      // Store this round's labels for next time
+      const allLabels = result.categories.flatMap(c => c.topics.map(t => t.label));
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_discovery_labels', ?)").run(JSON.stringify(allLabels));
 
       const logs = db
         .prepare("SELECT model, input_tokens, output_tokens FROM ai_logs WHERE run_id = ?")

@@ -102,12 +102,13 @@ export function parseCoachCheckResponse(text: string): CoachCheckResult {
   }
 }
 
-export async function coachCheck(
+async function runCoachCheck(
   client: Anthropic,
   logger: AiLogger,
   draft: string,
   rules: GenerationRule[],
-  insights: CoachingInsight[]
+  insights: CoachingInsight[],
+  stepName: string
 ): Promise<CoachCheckResult> {
   const prompt = buildCoachCheckPrompt(draft, rules, insights);
 
@@ -124,7 +125,7 @@ export async function coachCheck(
     response.content[0].type === "text" ? response.content[0].text : "";
 
   logger.log({
-    step: "coach_check",
+    step: stepName,
     model: MODELS.SONNET,
     input_messages: JSON.stringify([{ role: "user", content: prompt }]),
     output_text: text,
@@ -143,4 +144,92 @@ export async function coachCheck(
   }
 
   return result;
+}
+
+/**
+ * Self-fix pass: AI tries to address expertise_needed items on its own before
+ * handing them to the user. Only items genuinely requiring the author's personal
+ * experience should survive.
+ */
+async function selfFix(
+  client: Anthropic,
+  logger: AiLogger,
+  draft: string,
+  expertiseItems: Array<{ area: string; question: string }>
+): Promise<string> {
+  const issuesList = expertiseItems
+    .map((item, i) => `${i + 1}. [${item.area}] ${item.question}`)
+    .join("\n");
+
+  const prompt = `You are revising a LinkedIn post. The quality review flagged these areas:
+
+${issuesList}
+
+## Current Draft
+${draft}
+
+Revise the draft to address as many issues as you can through better writing:
+- Sharpen vague claims with stronger framing
+- Tighten structure if focus was flagged
+- Strengthen opening/closing if they were flagged
+- Add specificity through better word choice and concrete language
+
+Do NOT fabricate personal stories, fake company names, made-up metrics, or invented experiences. If an issue genuinely requires the author's real experience, leave it — the author will address it.
+
+Return ONLY the revised draft as plain text (no JSON, no markdown fences).`;
+
+  const start = Date.now();
+  const response = await client.messages.create({
+    model: MODELS.SONNET,
+    max_tokens: 2000,
+    system: "You are a concise LinkedIn post editor. Return only the revised draft text.",
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  const duration = Date.now() - start;
+  const text =
+    response.content[0].type === "text" ? response.content[0].text : "";
+
+  logger.log({
+    step: "coach_self_fix",
+    model: MODELS.SONNET,
+    input_messages: JSON.stringify([{ role: "user", content: prompt }]),
+    output_text: text,
+    tool_calls: null,
+    input_tokens: response.usage.input_tokens,
+    output_tokens: response.usage.output_tokens,
+    thinking_tokens: 0,
+    duration_ms: duration,
+  });
+
+  return text.trim() || draft;
+}
+
+/**
+ * Run coach-check with one self-fix pass: initial check → self-fix → second check.
+ * The second pass should return fewer expertise_needed items since the AI addressed
+ * what it could on its own.
+ */
+export async function coachCheck(
+  client: Anthropic,
+  logger: AiLogger,
+  draft: string,
+  rules: GenerationRule[],
+  insights: CoachingInsight[]
+): Promise<CoachCheckResult> {
+  // Pass 1: initial quality check
+  const first = await runCoachCheck(client, logger, draft, rules, insights, "coach_check_1");
+
+  // If no expertise items flagged, we're done
+  if (first.expertise_needed.length === 0) {
+    return first;
+  }
+
+  // Self-fix pass: AI tries to address flagged items
+  const fixedDraft = await selfFix(client, logger, first.draft, first.expertise_needed);
+
+  // Pass 2: re-check the self-fixed draft
+  const second = await runCoachCheck(client, logger, fixedDraft, rules, insights, "coach_check_2");
+
+  return second;
 }

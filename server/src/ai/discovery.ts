@@ -19,7 +19,7 @@ export interface DiscoveryResult {
   categories: DiscoveryCategory[];
 }
 
-export function buildClusteringPrompt(items: RssItem[], authorContext?: string): string {
+export function buildClusteringPrompt(items: RssItem[], authorContext?: string, previousLabels?: string[]): string {
   const itemList = items
     .map((item, i) => `${i + 1}. ${item.title} — ${item.summary?.substring(0, 200) || ""} [${item.link}]`)
     .join("\n");
@@ -28,8 +28,12 @@ export function buildClusteringPrompt(items: RssItem[], authorContext?: string):
     ? `\nAUTHOR CONTEXT — only surface topics relevant to this creator's expertise:\n${authorContext}\n`
     : "";
 
+  const avoidBlock = previousLabels && previousLabels.length > 0
+    ? `\nAVOID THESE TOPICS — they were already suggested. Find DIFFERENT angles and topics:\n${previousLabels.map(l => `- ${l}`).join("\n")}\n`
+    : "";
+
   return `You are organizing RSS feed items into topic clusters for a LinkedIn content creator.
-${contextBlock}
+${contextBlock}${avoidBlock}
 RSS items from the past week:
 ${itemList}
 
@@ -75,7 +79,8 @@ export function parseClusteringResponse(text: string): DiscoveryResult {
 export async function discoverTopics(
   client: Anthropic,
   db: Database.Database,
-  logger: AiLogger
+  logger: AiLogger,
+  previousLabels?: string[]
 ): Promise<DiscoveryResult> {
   const rssItems = await fetchAllFeeds(db);
 
@@ -96,7 +101,7 @@ export async function discoverTopics(
   }
   const authorContext = contextParts.length > 0 ? contextParts.join("\n\n") : undefined;
 
-  const prompt = buildClusteringPrompt(rssItems, authorContext);
+  const prompt = buildClusteringPrompt(rssItems, authorContext, previousLabels);
 
   const start = Date.now();
   const response = await client.messages.create({

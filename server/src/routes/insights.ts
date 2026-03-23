@@ -20,6 +20,7 @@ import {
   getTopicPerformance,
   getHookPerformance,
   getImageSubtypePerformance,
+  getSetting,
 } from "../db/ai-queries.js";
 import { createClient, calculateCostCents } from "../ai/client.js";
 import { runPipeline } from "../ai/orchestrator.js";
@@ -226,5 +227,41 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
       )
       .get() as { total: number };
     return { runs, total_cost_cents: totalCostCents.total };
+  });
+
+  // ── Analysis status (for regenerate button + next auto-regen) ──
+
+  app.get("/api/insights/status", async () => {
+    const running = getRunningRun(db);
+    const lastFullRun = db.prepare(
+      `SELECT id, triggered_by, post_count, completed_at
+       FROM ai_runs WHERE status = 'completed'
+         AND triggered_by NOT LIKE '%tagging%'
+       ORDER BY id DESC LIMIT 1`
+    ).get() as { id: number; triggered_by: string; post_count: number; completed_at: string } | undefined;
+
+    const schedule = getSetting(db, "auto_interpret_schedule") ?? "weekly";
+    const postThreshold = parseInt(getSetting(db, "auto_interpret_post_threshold") ?? "5", 10);
+
+    // Compute next auto-regen time
+    let nextAutoRegen: string | null = null;
+    if (lastFullRun && schedule !== "off") {
+      const lastRunTime = new Date(lastFullRun.completed_at + "Z").getTime();
+      const msPerDay = 86400000;
+      const interval = schedule === "daily" ? msPerDay : 7 * msPerDay;
+      nextAutoRegen = new Date(lastRunTime + interval).toISOString();
+    }
+
+    return {
+      running: running ? { id: running.id, started_at: running.started_at } : null,
+      last_run: lastFullRun ? {
+        id: lastFullRun.id,
+        completed_at: lastFullRun.completed_at,
+        triggered_by: lastFullRun.triggered_by,
+      } : null,
+      schedule,
+      post_threshold: postThreshold,
+      next_auto_regen: nextAutoRegen,
+    };
   });
 }

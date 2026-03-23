@@ -22,6 +22,7 @@ const sortOptions = [
   { value: "published_at", label: "Date" },
   { value: "impressions", label: "Impressions" },
   { value: "engagement_rate", label: "Engagement" },
+  { value: "weighted_engagement", label: "Score" },
   { value: "reactions", label: "Reactions" },
   { value: "comments", label: "Comments" },
 ];
@@ -141,7 +142,8 @@ export default function Posts() {
     return topics.split(",").map((t) => t.trim()).filter(Boolean);
   };
 
-  const TOTAL_COLS = 8; // post + category + topics + 5 sort cols
+  const showTags = total >= 10;
+  const TOTAL_COLS = showTags ? 9 : 7; // post + (category + topics if >=10 posts) + 6 sort cols
 
   return (
     <div className="space-y-4">
@@ -173,8 +175,8 @@ export default function Posts() {
                   </select>
                 </div>
               </th>
-              <th className="text-left px-3 py-3 font-medium w-28 sticky top-[57px] bg-surface-1 z-10 border-b border-border">Category</th>
-              <th className="text-left px-3 py-3 font-medium w-36 sticky top-[57px] bg-surface-1 z-10 border-b border-border">Topics</th>
+              {showTags && <th className="text-left px-3 py-3 font-medium w-28 sticky top-[57px] bg-surface-1 z-10 border-b border-border">Category</th>}
+              {showTags && <th className="text-left px-3 py-3 font-medium w-36 sticky top-[57px] bg-surface-1 z-10 border-b border-border">Topics</th>}
               {sortOptions.map((s) => (
                 <th
                   key={s.value}
@@ -209,23 +211,27 @@ export default function Posts() {
                     </div>
                   </td>
                   {/* Category */}
-                  <td className="px-3 py-3 align-top">
-                    {p.post_category && (
-                      <span className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-accent/10 text-accent whitespace-nowrap">
-                        {p.post_category.replace(/_/g, " ")}
-                      </span>
-                    )}
-                  </td>
-                  {/* Topics */}
-                  <td className="px-3 py-3 align-top">
-                    <div className="flex flex-col gap-1">
-                      {parseTopics(p.topics).map((topic) => (
-                        <span key={topic} className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-surface-3 text-text-muted whitespace-nowrap w-fit">
-                          {topic}
+                  {showTags && (
+                    <td className="px-3 py-3 align-top">
+                      {p.post_category && (
+                        <span className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-accent/10 text-accent whitespace-nowrap">
+                          {p.post_category.replace(/_/g, " ")}
                         </span>
-                      ))}
-                    </div>
-                  </td>
+                      )}
+                    </td>
+                  )}
+                  {/* Topics */}
+                  {showTags && (
+                    <td className="px-3 py-3 align-top">
+                      <div className="flex flex-col gap-1">
+                        {parseTopics(p.topics).map((topic) => (
+                          <span key={topic} className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-surface-3 text-text-muted whitespace-nowrap w-fit">
+                            {topic}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-right font-mono text-text-secondary">
                     {new Date(p.published_at).toLocaleDateString()}
                   </td>
@@ -236,6 +242,9 @@ export default function Posts() {
                     {p.engagement_rate != null
                       ? (p.engagement_rate * 100).toFixed(1) + "%"
                       : "--"}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono">
+                    {fmt(p.weighted_engagement)}
                   </td>
                   <td className="px-4 py-3 text-right font-mono">
                     {fmt(p.reactions)}

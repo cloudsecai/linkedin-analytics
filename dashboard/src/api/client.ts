@@ -238,6 +238,14 @@ export interface ImageSubtypePerformance {
   median_comments: number;
 }
 
+export interface AnalysisStatus {
+  running: { id: number; started_at: string } | null;
+  last_run: { id: number; completed_at: string; triggered_by: string } | null;
+  schedule: string;
+  post_threshold: number;
+  next_auto_regen: string | null;
+}
+
 export interface HealthData {
   last_sync_at: string | null;
   sources: {
@@ -449,8 +457,14 @@ export const api = {
       `/insights/tags?post_ids=${postIds.join(",")}`
     ),
   insightsTaxonomy: () => get<{ taxonomy: TaxonomyItem[] }>("/insights/taxonomy"),
-  insightsRefresh: () =>
-    fetch(`${BASE_URL}/insights/refresh`, { method: "POST" }).then((r) => r.json()),
+  insightsRefresh: (force = false) =>
+    fetch(`${BASE_URL}/insights/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    }).then((r) => r.json()),
+  insightsStatus: () =>
+    get<AnalysisStatus>("/insights/status"),
   recommendationFeedback: (id: number, rating: string, reason?: string) =>
     fetch(`${BASE_URL}/insights/recommendations/${id}/feedback`, {
       method: "PATCH",
@@ -686,6 +700,19 @@ export const api = {
       return r.json();
     }),
 
+  generateRetro: (id: number, publishedText: string) =>
+    fetch(`${BASE_URL}/generate/history/${id}/retro`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ published_text: publishedText }),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json() as Promise<{ analysis: RetroAnalysis; input_tokens: number; output_tokens: number }>;
+    }),
+
+  generateGetRetro: (id: number) =>
+    get<RetroResponse>(`/generate/history/${id}/retro`),
+
   // ── Coaching Sync ─────────────────────────────────────────
 
   generateCoachingAnalyze: () =>
@@ -774,6 +801,37 @@ export const api = {
       return data.sources as Array<{ name: string; url: string; feed_url: string | null; description: string }>;
     }),
 };
+
+export interface RetroChange {
+  category: string;
+  significance: string;
+  principle: string;
+  draft_excerpt?: string;
+  published_excerpt?: string;
+}
+
+export interface RetroAnalysis {
+  core_message_same: boolean;
+  surface_changes_summary: string;
+  changes: RetroChange[];
+  patterns: string[];
+  rule_suggestions: Array<{
+    action: string;
+    category: string;
+    rule_text: string;
+    evidence: string;
+  }>;
+  prompt_suggestions: string[];
+  summary: string;
+}
+
+export interface RetroResponse {
+  retro: {
+    published_text: string;
+    analysis: RetroAnalysis;
+    retro_at: string;
+  } | null;
+}
 
 export interface GenSource {
   id: number;
