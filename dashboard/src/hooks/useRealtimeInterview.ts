@@ -13,6 +13,7 @@ interface UseRealtimeInterviewReturn {
   status: InterviewStatus;
   elapsed: number;
   transcript: TranscriptEntry[];
+  getTranscript: () => TranscriptEntry[];
   error: string | null;
   start: () => Promise<void>;
   stop: () => void;
@@ -21,7 +22,16 @@ interface UseRealtimeInterviewReturn {
 export function useRealtimeInterview(): UseRealtimeInterviewReturn {
   const [status, setStatus] = useState<InterviewStatus>("idle");
   const [elapsed, setElapsed] = useState(0);
-  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [transcript, _setTranscript] = useState<TranscriptEntry[]>([]);
+  const transcriptRef = useRef<TranscriptEntry[]>([]);
+  const setTranscript = useCallback((updater: TranscriptEntry[] | ((prev: TranscriptEntry[]) => TranscriptEntry[])) => {
+    _setTranscript((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      transcriptRef.current = next;
+      return next;
+    });
+  }, []);
+  const getTranscript = useCallback(() => transcriptRef.current, []);
   const [error, setError] = useState<string | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -95,6 +105,12 @@ export function useRealtimeInterview(): UseRealtimeInterviewReturn {
       dc.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+          // Log all events for debugging (visible in browser console)
+          if (msg.type?.includes("error")) {
+            console.error("[Interview]", msg.type, msg);
+          } else if (msg.type?.includes("transcript") || msg.type?.includes("speech") || msg.type?.includes("response.")) {
+            console.log("[Interview]", msg.type, msg.transcript ?? "");
+          }
           // Capture transcript from conversation events
           if (msg.type === "response.audio_transcript.done" && msg.transcript) {
             setTranscript((prev) => [...prev, { role: "assistant", text: msg.transcript, timestamp: Date.now() }]);
@@ -179,5 +195,5 @@ export function useRealtimeInterview(): UseRealtimeInterviewReturn {
     setStatus("done");
   }, [cleanup]);
 
-  return { status, elapsed, transcript, error, start, stop };
+  return { status, elapsed, transcript, getTranscript, error, start, stop };
 }

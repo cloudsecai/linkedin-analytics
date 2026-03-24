@@ -8,7 +8,7 @@ interface InterviewModalProps {
 }
 
 export default function InterviewModal({ onClose, onComplete }: InterviewModalProps) {
-  const { status, elapsed, transcript, error, start, stop } = useRealtimeInterview();
+  const { status, elapsed, transcript, getTranscript, error, start, stop } = useRealtimeInterview();
   const [phase, setPhase] = useState<"pre" | "active" | "extracting" | "review">("pre");
   const [extractedText, setExtractedText] = useState("");
   const [extractedJson, setExtractedJson] = useState<Record<string, any>>({});
@@ -41,16 +41,17 @@ export default function InterviewModal({ onClose, onComplete }: InterviewModalPr
   };
 
   const handleStop = async () => {
+    const currentTranscript = getTranscript();
     stop();
     setPhase("extracting");
 
     // Build transcript text
-    const transcriptText = transcript
+    const transcriptText = currentTranscript
       .map((t) => `${t.role === "user" ? "User" : "Interviewer"}: ${t.text}`)
       .join("\n\n");
 
     if (!transcriptText.trim()) {
-      setExtractError("No conversation was captured. Please try again.");
+      setExtractError("No conversation was captured. The microphone may not be working — check your browser permissions and try again.");
       setPhase("pre");
       return;
     }

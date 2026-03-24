@@ -8,7 +8,7 @@ interface VoiceInterviewProps {
 }
 
 export default function VoiceInterview({ onNext, onSkip }: VoiceInterviewProps) {
-  const { status, elapsed, transcript, error, start, stop } = useRealtimeInterview();
+  const { status, elapsed, transcript, getTranscript, error, start, stop } = useRealtimeInterview();
   const [phase, setPhase] = useState<"pre" | "active" | "extracting" | "review">("pre");
   const [extractedText, setExtractedText] = useState("");
   const [extractError, setExtractError] = useState<string | null>(null);
@@ -40,9 +40,10 @@ export default function VoiceInterview({ onNext, onSkip }: VoiceInterviewProps) 
   };
 
   const handleStop = async () => {
+    const currentTranscript = getTranscript();
     stop();
     setPhase("extracting");
-    const transcriptText = transcript
+    const transcriptText = currentTranscript
       .map((t) => `${t.role === "user" ? "User" : "Interviewer"}: ${t.text}`)
       .join("\n\n");
 

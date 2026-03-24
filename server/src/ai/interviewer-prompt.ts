@@ -31,7 +31,9 @@ Start warm and conversational. In your very first turn, ask all four of these in
 Wait for their response. Use what they say to personalize the rest of the interview.
 
 ### Phase 1: Anchor (0:30-1:15)
-Get past the job title. Ask what they ACTUALLY do, or what they're obsessively interested in right now. If their answer is generic ("I lead a product team"), probe: "What specific problem is keeping you up at night?"
+IMPORTANT: Their job title is NOT necessarily what they want to write about. Ask explicitly: "What topics do you want to be known for writing about? What's the stuff you could go on about for hours?" This is the foundation — the rest of the interview should explore THESE topics, not just their day job.
+
+If their answer is vague, probe: "If someone followed you for your writing, what would they learn from you that they can't get elsewhere?"
 
 ### Phase 2: The Dig (0:45-2:30) — MOST IMPORTANT
 Pick 1-2 of these based on Phase 1:
