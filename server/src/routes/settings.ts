@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import {
   getSetting,
   upsertSetting,
@@ -20,6 +21,52 @@ function isValidTimezone(tz: string): boolean {
   } catch {
     return false;
   }
+}
+
+// Keys users can configure through the UI
+const CONFIGURABLE_KEYS: Record<string, { label: string; required: boolean; prefix: string; url: string }> = {
+  TRUSTMIND_LLM_API_KEY: {
+    label: "OpenRouter API Key",
+    required: true,
+    prefix: "sk-or-",
+    url: "https://openrouter.ai/keys",
+  },
+  OPENAI_API_KEY: {
+    label: "OpenAI API Key",
+    required: false,
+    prefix: "sk-",
+    url: "https://platform.openai.com/api-keys",
+  },
+};
+
+function getEnvPath(): string {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  return path.join(__dirname, "../.env");
+}
+
+function readEnvFile(): Map<string, string> {
+  const envPath = getEnvPath();
+  const entries = new Map<string, string>();
+  if (!fs.existsSync(envPath)) return entries;
+  const content = fs.readFileSync(envPath, "utf-8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx > 0) {
+      entries.set(trimmed.slice(0, eqIdx).trim(), trimmed.slice(eqIdx + 1).trim());
+    }
+  }
+  return entries;
+}
+
+function writeEnvFile(entries: Map<string, string>): void {
+  const envPath = getEnvPath();
+  const lines: string[] = [];
+  for (const [key, value] of entries) {
+    lines.push(`${key}=${value}`);
+  }
+  fs.writeFileSync(envPath, lines.join("\n") + "\n", "utf-8");
 }
 
 export function registerSettingsRoutes(
@@ -183,5 +230,48 @@ export function registerSettingsRoutes(
         ...(staleWarning ? [JSON.parse(staleWarning)] : []),
       ],
     };
+  });
+
+  // ── API key configuration ─────────────────────────────────
+
+  app.get("/api/config/keys", async () => {
+    const keys = Object.entries(CONFIGURABLE_KEYS).map(([envName, meta]) => ({
+      key: envName,
+      label: meta.label,
+      required: meta.required,
+      configured: !!process.env[envName],
+      prefix: meta.prefix,
+      url: meta.url,
+    }));
+    return { keys };
+  });
+
+  app.post("/api/config/keys", async (request, reply) => {
+    const { keys } = request.body as { keys: Record<string, string> };
+    if (!keys || typeof keys !== "object") {
+      return reply.status(400).send({ error: "keys object is required" });
+    }
+
+    // Validate all keys are in the allowlist
+    for (const key of Object.keys(keys)) {
+      if (!CONFIGURABLE_KEYS[key]) {
+        return reply.status(400).send({ error: `Unknown key: ${key}` });
+      }
+      if (typeof keys[key] !== "string" || keys[key].length > 500) {
+        return reply.status(400).send({ error: `Invalid value for ${key}` });
+      }
+    }
+
+    // Read existing .env, merge new keys, write back
+    const entries = readEnvFile();
+    for (const [key, value] of Object.entries(keys)) {
+      if (value.trim()) {
+        entries.set(key, value.trim());
+        process.env[key] = value.trim();
+      }
+    }
+    writeEnvFile(entries);
+
+    return { ok: true };
   });
 }

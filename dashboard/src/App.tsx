@@ -8,6 +8,7 @@ import Followers from "./pages/Followers";
 import Settings from "./pages/Settings";
 import Generate from "./pages/Generate";
 import OnboardingWizard from "./pages/onboarding/OnboardingWizard";
+import ApiKeySetup from "./pages/onboarding/ApiKeySetup";
 
 const tabs = ["Overview", "Posts", "Coach", "Generate", "Timing", "Followers", "Settings"] as const;
 type Tab = (typeof tabs)[number];
@@ -18,10 +19,18 @@ export default function App() {
     return tabs.includes(hash) ? hash : "Overview";
   });
   const [health, setHealth] = useState<HealthData | null>(null);
+  const [keysConfigured, setKeysConfigured] = useState<boolean | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => {});
+    // Check API keys first, then onboarding status
+    api.getConfigKeys()
+      .then(({ keys }) => {
+        const requiredMissing = keys.some((k) => k.required && !k.configured);
+        setKeysConfigured(!requiredMissing);
+      })
+      .catch(() => setKeysConfigured(true)); // On error, skip key check
     api.getSetting("onboarding_complete")
       .then((val) => setOnboardingComplete(val === "true"))
       .catch(() => setOnboardingComplete(true)); // On error, show main app
@@ -40,9 +49,18 @@ export default function App() {
     ? Object.values(health.sources).some((s) => s.status === "error")
     : false;
 
-  // Still loading onboarding status
-  if (onboardingComplete === null) {
+  // Still loading
+  if (keysConfigured === null || onboardingComplete === null) {
     return null;
+  }
+
+  // Show API key setup if required keys are missing
+  if (!keysConfigured) {
+    return (
+      <ApiKeySetup
+        onComplete={() => setKeysConfigured(true)}
+      />
+    );
   }
 
   // Show onboarding wizard for new users

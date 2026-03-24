@@ -793,6 +793,23 @@ export const api = {
 
   // ── Source Discovery ────────────────────────────────────
 
+  // ── API Key Config ─────────────────────────────────────
+
+  getConfigKeys: () =>
+    get<{ keys: Array<{ key: string; label: string; required: boolean; configured: boolean; prefix: string; url: string }> }>("/config/keys"),
+
+  saveConfigKeys: (keys: Record<string, string>) =>
+    fetch(`${BASE_URL}/config/keys`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keys }),
+    }).then((r) => {
+      if (!r.ok) throw new Error(`API error: ${r.status}`);
+      return r.json() as Promise<{ ok: boolean }>;
+    }),
+
+  // ── Source Discovery ────────────────────────────────────
+
   discoverSources: (topics?: string[]) =>
     fetch(`${BASE_URL}/sources/discover`, {
       method: "POST",
