@@ -47,6 +47,7 @@ export function useRealtimeInterview(): UseRealtimeInterviewReturn {
     }
     if (audioRef.current) {
       audioRef.current.srcObject = null;
+      audioRef.current.remove();
       audioRef.current = null;
     }
   }, []);
@@ -76,9 +77,11 @@ export function useRealtimeInterview(): UseRealtimeInterviewReturn {
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
-      // Play remote audio
+      // Play remote audio — must be in DOM for autoplay to work
       const audio = document.createElement("audio");
       audio.autoplay = true;
+      audio.style.display = "none";
+      document.body.appendChild(audio);
       audioRef.current = audio;
       pc.ontrack = (e) => { audio.srcObject = e.streams[0]; };
 
@@ -133,8 +136,9 @@ export function useRealtimeInterview(): UseRealtimeInterviewReturn {
 
       setStatus("active");
 
-      // Send session update to enable input audio transcription
-      const sendSessionUpdate = () => {
+      // Send session update and trigger AI's first response
+      const onChannelReady = () => {
+        // Enable input audio transcription
         dc.send(JSON.stringify({
           type: "session.update",
           session: {
@@ -143,12 +147,16 @@ export function useRealtimeInterview(): UseRealtimeInterviewReturn {
             },
           },
         }));
+        // Trigger the AI to speak first (ask for name/role/etc)
+        dc.send(JSON.stringify({
+          type: "response.create",
+        }));
       };
 
       if (dc.readyState === "open") {
-        sendSessionUpdate();
+        onChannelReady();
       } else {
-        dc.onopen = sendSessionUpdate;
+        dc.onopen = onChannelReady;
       }
 
       // Monitor connection state
