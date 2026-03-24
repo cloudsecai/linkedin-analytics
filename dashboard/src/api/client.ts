@@ -11,6 +11,13 @@ async function get<T>(path: string): Promise<T> {
   return res.json();
 }
 
+// For routes not yet under the persona prefix (insights, generate, settings, sources, author-profile)
+async function getUnscoped<T>(path: string): Promise<T> {
+  const res = await fetch(`/api${path}`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
 export interface OverviewData {
   total_impressions: number;
   avg_engagement_rate: number | null;
@@ -454,44 +461,44 @@ export const api = {
   followers: () => get<{ snapshots: FollowerSnapshot[] }>("/followers"),
   profile: () => get<{ snapshots: ProfileSnapshot[] }>("/profile"),
   health: () => get<HealthData>("/health"),
-  insightsOverview: () => get<{ overview: AiOverview | null }>("/insights/overview"),
-  insights: () => get<{ recommendations: Recommendation[]; insights: Insight[] }>("/insights"),
-  insightsChangelog: () => get<Changelog>("/insights/changelog"),
+  insightsOverview: () => getUnscoped<{ overview: AiOverview | null }>("/insights/overview"),
+  insights: () => getUnscoped<{ recommendations: Recommendation[]; insights: Insight[] }>("/insights"),
+  insightsChangelog: () => getUnscoped<Changelog>("/insights/changelog"),
   insightsTags: (postIds: string[]) =>
-    get<{ tags: Record<string, { hook_type: string; tone: string; format_style: string }> }>(
+    getUnscoped<{ tags: Record<string, { hook_type: string; tone: string; format_style: string }> }>(
       `/insights/tags?post_ids=${postIds.join(",")}`
     ),
-  insightsTaxonomy: () => get<{ taxonomy: TaxonomyItem[] }>("/insights/taxonomy"),
+  insightsTaxonomy: () => getUnscoped<{ taxonomy: TaxonomyItem[] }>("/insights/taxonomy"),
   insightsRefresh: (force = false) =>
-    fetch(`${getBaseUrl()}/insights/refresh`, {
+    fetch(`/api/insights/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ force }),
     }).then((r) => r.json()),
   insightsStatus: () =>
-    get<AnalysisStatus>("/insights/status"),
+    getUnscoped<AnalysisStatus>("/insights/status"),
   recommendationFeedback: (id: number, rating: string, reason?: string) =>
-    fetch(`${getBaseUrl()}/insights/recommendations/${id}/feedback`, {
+    fetch(`/api/insights/recommendations/${id}/feedback`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ feedback: { rating, reason: reason || null } }),
     }).then((r) => r.json()),
   authorPhoto: () =>
-    fetch(`${getBaseUrl()}/settings/author-photo`).then((r) =>
+    fetch(`/api/settings/author-photo`).then((r) =>
       r.ok ? r.blob().then((b) => URL.createObjectURL(b)) : null
     ),
   uploadAuthorPhoto: (file: File) =>
-    fetch(`${getBaseUrl()}/settings/author-photo`, {
+    fetch(`/api/settings/author-photo`, {
       method: "POST",
       body: file,
       headers: { "Content-Type": file.type },
     }).then((r) => r.json()),
   deleteAuthorPhoto: () =>
-    fetch(`${getBaseUrl()}/settings/author-photo`, { method: "DELETE" }).then((r) => r.json()),
+    fetch(`/api/settings/author-photo`, { method: "DELETE" }).then((r) => r.json()),
 
   // Timezone
   setTimezone: (timezone: string) =>
-    fetch(`${getBaseUrl()}/settings/timezone`, {
+    fetch(`/api/settings/timezone`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ timezone }),
@@ -499,25 +506,25 @@ export const api = {
 
   // Writing prompt
   getWritingPrompt: () =>
-    get<{ text: string | null }>("/settings/writing-prompt"),
+    getUnscoped<{ text: string | null }>("/settings/writing-prompt"),
 
   saveWritingPrompt: (text: string, source: "manual_edit" | "ai_suggestion", evidence?: string) =>
-    fetch(`${getBaseUrl()}/settings/writing-prompt`, {
+    fetch(`/api/settings/writing-prompt`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, source, evidence }),
     }).then((r) => r.json() as Promise<{ ok: boolean }>),
 
   getWritingPromptHistory: () =>
-    get<{ history: WritingPromptHistory[] }>("/settings/writing-prompt/history"),
+    getUnscoped<{ history: WritingPromptHistory[] }>("/settings/writing-prompt/history"),
 
   // Recommendations with cooldown
   recommendationsWithCooldown: () =>
-    get<RecommendationsWithCooldown>("/insights/recommendations"),
+    getUnscoped<RecommendationsWithCooldown>("/insights/recommendations"),
 
   // Resolve a recommendation
   resolveRecommendation: (id: number, type: "accepted" | "dismissed") =>
-    fetch(`${getBaseUrl()}/insights/recommendations/${id}/resolve`, {
+    fetch(`/api/insights/recommendations/${id}/resolve`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type }),
@@ -525,44 +532,44 @@ export const api = {
 
   // Deep Dive endpoints
   deepDiveProgress: (days = 30) =>
-    get<ProgressData>(`/insights/deep-dive/progress?days=${days}`),
+    getUnscoped<ProgressData>(`/insights/deep-dive/progress?days=${days}`),
 
   deepDiveCategories: () =>
-    get<{ categories: CategoryPerformance[] }>("/insights/deep-dive/categories"),
+    getUnscoped<{ categories: CategoryPerformance[] }>("/insights/deep-dive/categories"),
 
   deepDiveEngagement: () =>
-    get<{ engagement: EngagementQuality }>("/insights/deep-dive/engagement"),
+    getUnscoped<{ engagement: EngagementQuality }>("/insights/deep-dive/engagement"),
 
   deepDiveSparkline: (days = 90) =>
-    get<{ points: SparklinePoint[] }>(`/insights/deep-dive/sparkline?days=${days}`),
+    getUnscoped<{ points: SparklinePoint[] }>(`/insights/deep-dive/sparkline?days=${days}`),
 
   deepDiveTopics: (days?: number) =>
-    get<{ topics: TopicPerformance[] }>(`/insights/deep-dive/topics${days ? `?days=${days}` : ""}`),
+    getUnscoped<{ topics: TopicPerformance[] }>(`/insights/deep-dive/topics${days ? `?days=${days}` : ""}`),
 
   deepDiveHooks: (days?: number) =>
-    get<{ by_hook_type: HookPerformance[]; by_format_style: HookPerformance[] }>(
+    getUnscoped<{ by_hook_type: HookPerformance[]; by_format_style: HookPerformance[] }>(
       `/insights/deep-dive/hooks${days ? `?days=${days}` : ""}`
     ),
 
   deepDiveImageSubtypes: (days?: number) =>
-    get<{ subtypes: ImageSubtypePerformance[] }>(
+    getUnscoped<{ subtypes: ImageSubtypePerformance[] }>(
       `/insights/deep-dive/image-subtypes${days ? `?days=${days}` : ""}`
     ),
 
   // Analysis gaps
   insightsGaps: () =>
-    get<{ gaps: AnalysisGap[] }>("/insights/gaps"),
+    getUnscoped<{ gaps: AnalysisGap[] }>("/insights/gaps"),
 
   // Prompt suggestions
   insightsPromptSuggestions: () =>
-    get<{ prompt_suggestions: PromptSuggestions | null }>("/insights/prompt-suggestions"),
+    getUnscoped<{ prompt_suggestions: PromptSuggestions | null }>("/insights/prompt-suggestions"),
 
   // Auto-refresh settings
   getAutoRefreshSettings: () =>
-    get<{ schedule: string; post_threshold: number }>("/settings/auto-refresh"),
+    getUnscoped<{ schedule: string; post_threshold: number }>("/settings/auto-refresh"),
 
   saveAutoRefreshSettings: (settings: { schedule?: string; post_threshold?: number }) =>
-    fetch(`${getBaseUrl()}/settings/auto-refresh`, {
+    fetch(`/api/settings/auto-refresh`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(settings),
@@ -570,26 +577,26 @@ export const api = {
 
   // Run history
   getAiRuns: () =>
-    get<{ runs: AiRun[]; total_cost_cents: number }>("/insights/runs"),
+    getUnscoped<{ runs: AiRun[]; total_cost_cents: number }>("/insights/runs"),
 
   // Sync health
   getSyncHealth: () =>
-    get<{ warnings: Array<{ message: string; detected_at: string }> }>("/settings/sync-health"),
+    getUnscoped<{ warnings: Array<{ message: string; detected_at: string }> }>("/settings/sync-health"),
 
   // ── Author Profile ──────────────────────────────────────────
 
   getAuthorProfile: () =>
-    get<AuthorProfileResponse>("/author-profile"),
+    getUnscoped<AuthorProfileResponse>("/author-profile"),
 
   saveAuthorProfile: (profile_text: string, profile_json?: Record<string, any>) =>
-    fetch(`${getBaseUrl()}/author-profile`, {
+    fetch(`/api/author-profile`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile_text, profile_json }),
     }).then((r) => r.json() as Promise<{ ok: boolean }>),
 
   createInterviewSession: () =>
-    fetch(`${getBaseUrl()}/author-profile/interview/session`, {
+    fetch(`/api/author-profile/interview/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -602,7 +609,7 @@ export const api = {
     }),
 
   extractProfile: (transcript: string, duration_seconds?: number) =>
-    fetch(`${getBaseUrl()}/author-profile/extract`, {
+    fetch(`/api/author-profile/extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ transcript, duration_seconds }),
@@ -614,13 +621,13 @@ export const api = {
   // ── Generate Pipeline ─────────────────────────────────────
 
   generateDiscover: () =>
-    fetch(`${getBaseUrl()}/generate/discover`, { method: "POST" }).then((r) => {
+    fetch(`/api/generate/discover`, { method: "POST" }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json() as Promise<DiscoveryResponse>;
     }),
 
   generateResearch: (topic: string, avoid?: string[]) =>
-    fetch(`${getBaseUrl()}/generate/research`, {
+    fetch(`/api/generate/research`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -633,7 +640,7 @@ export const api = {
     }),
 
   generateDrafts: (researchId: number, storyIndex: number, personalConnection?: string, length?: "short" | "medium" | "long") =>
-    fetch(`${getBaseUrl()}/generate/drafts`, {
+    fetch(`/api/generate/drafts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -648,7 +655,7 @@ export const api = {
     }),
 
   generateChat: (generationId: number, message: string, editedDraft?: string) =>
-    fetch(`${getBaseUrl()}/generate/chat`, {
+    fetch(`/api/generate/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ generation_id: generationId, message, edited_draft: editedDraft }),
@@ -658,13 +665,13 @@ export const api = {
     }),
 
   generateChatHistory: (generationId: number) =>
-    fetch(`${getBaseUrl()}/generate/${generationId}/messages`).then((r) => {
+    fetch(`/api/generate/${generationId}/messages`).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json() as Promise<GenChatMessage[]>;
     }),
 
   generateCombine: (generationId: number, selectedDrafts: number[], combiningGuidance?: string) =>
-    fetch(`${getBaseUrl()}/generate/combine`, {
+    fetch(`/api/generate/combine`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ generation_id: generationId, selected_drafts: selectedDrafts, combining_guidance: combiningGuidance }),
@@ -676,10 +683,10 @@ export const api = {
   // ── Generate Rules ────────────────────────────────────────
 
   generateGetRules: () =>
-    get<GenRulesResponse>("/generate/rules"),
+    getUnscoped<GenRulesResponse>("/generate/rules"),
 
   generateSaveRules: (categories: GenRulesResponse["categories"]) =>
-    fetch(`${getBaseUrl()}/generate/rules`, {
+    fetch(`/api/generate/rules`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ categories }),
@@ -689,7 +696,7 @@ export const api = {
     }),
 
   generateResetRules: () =>
-    fetch(`${getBaseUrl()}/generate/rules/reset`, { method: "POST" }).then((r) => {
+    fetch(`/api/generate/rules/reset`, { method: "POST" }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json() as Promise<GenRulesResponse>;
     }),
@@ -697,19 +704,19 @@ export const api = {
   // ── Generate History ──────────────────────────────────────
 
   generateHistory: (status = "all", offset = 0, limit = 20) =>
-    get<GenHistoryResponse>(`/generate/history?status=${status}&offset=${offset}&limit=${limit}`),
+    getUnscoped<GenHistoryResponse>(`/generate/history?status=${status}&offset=${offset}&limit=${limit}`),
 
   generateHistoryDetail: (id: number) =>
-    get<any>(`/generate/history/${id}`),
+    getUnscoped<any>(`/generate/history/${id}`),
 
   generateDiscard: (id: number) =>
-    fetch(`${getBaseUrl()}/generate/history/${id}/discard`, { method: "POST" }).then((r) => {
+    fetch(`/api/generate/history/${id}/discard`, { method: "POST" }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json();
     }),
 
   generateRetro: (id: number, publishedText: string) =>
-    fetch(`${getBaseUrl()}/generate/history/${id}/retro`, {
+    fetch(`/api/generate/history/${id}/retro`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ published_text: publishedText }),
@@ -719,10 +726,10 @@ export const api = {
     }),
 
   generateGetRetro: (id: number) =>
-    get<RetroResponse>(`/generate/history/${id}/retro`),
+    getUnscoped<RetroResponse>(`/generate/history/${id}/retro`),
 
   generateAddRule: (category: string, ruleText: string) =>
-    fetch(`${getBaseUrl()}/generate/rules/add`, {
+    fetch(`/api/generate/rules/add`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ category, rule_text: ruleText }),
@@ -734,18 +741,18 @@ export const api = {
   // ── Pending Retros (for Coach) ──────────────────────────
 
   getPendingRetros: () =>
-    get<{ retros: PendingRetro[] }>("/generate/retros/pending"),
+    getUnscoped<{ retros: PendingRetro[] }>("/generate/retros/pending"),
 
   // ── Coaching Sync ─────────────────────────────────────────
 
   generateCoachingAnalyze: () =>
-    fetch(`${getBaseUrl()}/generate/coaching/analyze`, { method: "POST" }).then((r) => {
+    fetch(`/api/generate/coaching/analyze`, { method: "POST" }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json() as Promise<GenCoachingSyncResponse>;
     }),
 
   generateCoachingDecide: (changeId: number, action: string, editedText?: string) =>
-    fetch(`${getBaseUrl()}/generate/coaching/changes/${changeId}`, {
+    fetch(`/api/generate/coaching/changes/${changeId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, edited_text: editedText }),
@@ -755,17 +762,17 @@ export const api = {
     }),
 
   generateCoachingHistory: () =>
-    get<{ syncs: any[] }>("/generate/coaching/history"),
+    getUnscoped<{ syncs: any[] }>("/generate/coaching/history"),
 
   generateCoachingInsights: () =>
-    get<{ insights: GenCoachingInsight[] }>("/generate/coaching/insights"),
+    getUnscoped<{ insights: GenCoachingInsight[] }>("/generate/coaching/insights"),
 
   // Sources
   getSources: () =>
-    get<{ sources: GenSource[] }>("/sources"),
+    getUnscoped<{ sources: GenSource[] }>("/sources"),
 
   addSource: (url: string) =>
-    fetch(`${getBaseUrl()}/sources`, {
+    fetch(`/api/sources`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url }),
@@ -776,7 +783,7 @@ export const api = {
     }),
 
   updateSource: (id: number, updates: { enabled?: boolean; name?: string }) =>
-    fetch(`${getBaseUrl()}/sources/${id}`, {
+    fetch(`/api/sources/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
@@ -786,7 +793,7 @@ export const api = {
     }),
 
   deleteSource: (id: number) =>
-    fetch(`${getBaseUrl()}/sources/${id}`, { method: "DELETE" }).then((r) => {
+    fetch(`/api/sources/${id}`, { method: "DELETE" }).then((r) => {
       if (!r.ok) throw new Error(`API error: ${r.status}`);
       return r.json();
     }),
@@ -834,7 +841,7 @@ export const api = {
   // ── Source Discovery ────────────────────────────────────
 
   discoverSources: (topics?: string[]) =>
-    fetch(`${getBaseUrl()}/sources/discover`, {
+    fetch(`/api/sources/discover`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ topics }),
