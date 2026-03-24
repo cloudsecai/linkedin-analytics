@@ -34,6 +34,7 @@ interface GenerationState {
   personalConnection: string;
   draftLength: "short" | "medium" | "long";
   // Review
+  originalDraft: string;
   finalDraft: string;
   qualityGate: GenCoachCheckQuality | null;
   appliedInsights: GenCoachingInsight[];
@@ -55,6 +56,7 @@ const initialState: GenerationState = {
   combiningGuidance: "",
   personalConnection: "",
   draftLength: "medium",
+  originalDraft: "",
   finalDraft: "",
   qualityGate: null,
   appliedInsights: [],
@@ -125,7 +127,8 @@ export default function Generate() {
         {subTab === "Generate" && step === 4 && gen.generationId && (
           <PostRetro
             generationId={gen.generationId}
-            draftText={gen.finalDraft}
+            draftText={gen.originalDraft || gen.finalDraft}
+            finalDraftText={gen.finalDraft}
             onBack={() => setStep(3)}
           />
         )}
@@ -160,6 +163,7 @@ export default function Generate() {
               drafts,
               selectedDraftIndices: selectedIndices,
               combiningGuidance: data.combining_guidance ?? "",
+              originalDraft: data.final_draft ?? "",
               finalDraft: data.final_draft ?? "",
               qualityGate,
               personalConnection: data.personal_connection ?? "",

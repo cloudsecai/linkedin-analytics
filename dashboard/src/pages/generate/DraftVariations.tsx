@@ -68,6 +68,7 @@ export default function DraftVariations({ gen, setGen, loading, setLoading, onBa
       );
       setGen((prev: any) => ({
         ...prev,
+        originalDraft: res.final_draft,
         finalDraft: res.final_draft,
         qualityGate: res.quality,
       }));

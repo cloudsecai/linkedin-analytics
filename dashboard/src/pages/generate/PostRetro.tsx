@@ -4,10 +4,11 @@ import { api, type RetroAnalysis } from "../../api/client";
 interface PostRetroProps {
   generationId: number;
   draftText: string;
+  finalDraftText?: string;
   onBack: () => void;
 }
 
-export default function PostRetro({ generationId, draftText, onBack }: PostRetroProps) {
+export default function PostRetro({ generationId, draftText, finalDraftText, onBack }: PostRetroProps) {
   const [publishedText, setPublishedText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<RetroAnalysis | null>(null);
@@ -62,30 +63,46 @@ export default function PostRetro({ generationId, draftText, onBack }: PostRetro
         <h2 className="text-[15px] font-semibold text-text-primary">Post Retro</h2>
       </div>
 
-      {/* Side-by-side: draft and published */}
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-[11px] uppercase tracking-wider text-text-muted font-medium mb-2">
-            AI Draft
-          </label>
-          <div className="bg-surface-2 rounded-lg p-4 text-[13px] text-text-secondary leading-relaxed whitespace-pre-wrap max-h-[400px] overflow-y-auto">
-            {draftText}
+      {/* Side-by-side: original, revised (if changed), published */}
+      {(() => {
+        const hasRevisions = finalDraftText && finalDraftText !== draftText;
+        const cols = hasRevisions ? "grid-cols-3" : "grid-cols-2";
+        return (
+          <div className={`grid ${cols} gap-4`}>
+            <div>
+              <label className="block text-[11px] uppercase tracking-wider text-text-muted font-medium mb-2">
+                {hasRevisions ? "Original AI Draft" : "AI Draft"}
+              </label>
+              <div className="bg-surface-2 rounded-lg p-4 text-[13px] text-text-secondary leading-relaxed whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+                {draftText}
+              </div>
+            </div>
+            {hasRevisions && (
+              <div>
+                <label className="block text-[11px] uppercase tracking-wider text-text-muted font-medium mb-2">
+                  After Your Revisions
+                </label>
+                <div className="bg-surface-2 rounded-lg p-4 text-[13px] text-text-secondary leading-relaxed whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+                  {finalDraftText}
+                </div>
+              </div>
+            )}
+            <div>
+              <label className="block text-[11px] uppercase tracking-wider text-text-muted font-medium mb-2">
+                What You Published
+              </label>
+              <textarea
+                value={publishedText}
+                onChange={(e) => setPublishedText(e.target.value)}
+                placeholder="Paste the final version you published on LinkedIn..."
+                className="w-full bg-surface-2 border border-border rounded-lg p-4 text-[13px] text-text-primary leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-accent"
+                rows={16}
+                disabled={analyzing}
+              />
+            </div>
           </div>
-        </div>
-        <div>
-          <label className="block text-[11px] uppercase tracking-wider text-text-muted font-medium mb-2">
-            What You Published
-          </label>
-          <textarea
-            value={publishedText}
-            onChange={(e) => setPublishedText(e.target.value)}
-            placeholder="Paste the final version you published on LinkedIn..."
-            className="w-full bg-surface-2 border border-border rounded-lg p-4 text-[13px] text-text-primary leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-accent"
-            rows={16}
-            disabled={analyzing}
-          />
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Analyze button */}
       {!analysis && (
