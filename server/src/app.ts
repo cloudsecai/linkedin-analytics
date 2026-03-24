@@ -339,8 +339,8 @@ export function buildApp(dbPath: string) {
 
             // Only consider full pipeline runs (not tagging-only)
             const lastFullRun = db.prepare(
-              "SELECT id, post_count, completed_at FROM ai_runs WHERE status = 'completed' AND triggered_by NOT LIKE '%tagging%' ORDER BY id DESC LIMIT 1"
-            ).get() as { id: number; post_count: number; completed_at: string } | undefined;
+              "SELECT id, post_count, completed_at FROM ai_runs WHERE status = 'completed' AND triggered_by NOT LIKE '%tagging%' AND persona_id = ? ORDER BY id DESC LIMIT 1"
+            ).get(personaId) as { id: number; post_count: number; completed_at: string } | undefined;
 
             const newPosts = lastFullRun ? postCount - lastFullRun.post_count : postCount;
             if (newPosts < 1) return; // No new posts, skip

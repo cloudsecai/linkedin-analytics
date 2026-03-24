@@ -53,8 +53,8 @@ function getPersonaId(request: any): number {
 }
 
 export function registerGenerateRoutes(app: FastifyInstance, db: Database.Database): void {
-  // Seed default rules if table is empty (first run)
-  const ruleCount = (db.prepare("SELECT COUNT(*) as count FROM generation_rules").get() as any).count;
+  // Seed default rules for persona 1 if none exist (first run)
+  const ruleCount = (db.prepare("SELECT COUNT(*) as count FROM generation_rules WHERE persona_id = 1").get() as any).count;
   if (ruleCount === 0) {
     seedDefaultRules(db, 1);
   }

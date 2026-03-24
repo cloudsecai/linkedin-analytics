@@ -110,10 +110,13 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
     if (running) {
       return reply.status(409).send({ error: "Analysis already running", started_at: running.started_at });
     }
-    // Clear all tags, topics, and taxonomy to force full regeneration
-    db.prepare("DELETE FROM ai_tags").run();
-    db.prepare("DELETE FROM ai_post_topics").run();
-    db.prepare("DELETE FROM ai_taxonomy").run();
+    // Clear tags and topics for this persona's posts only; taxonomy is shared
+    db.prepare(
+      "DELETE FROM ai_post_topics WHERE post_id IN (SELECT id FROM posts WHERE persona_id = ?)"
+    ).run(personaId);
+    db.prepare(
+      "DELETE FROM ai_tags WHERE post_id IN (SELECT id FROM posts WHERE persona_id = ?)"
+    ).run(personaId);
     const client = createClient(apiKey);
     runPipeline(client, db, personaId, "retag").catch((err) => {
       console.error("[AI Pipeline] Retag failed:", err.message);
@@ -234,21 +237,22 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
 
   // ── Run history with costs ────────────────────────────────
 
-  app.get("/api/insights/runs", async () => {
+  app.get("/api/insights/runs", async (request) => {
+    const personaId = getPersonaId(request);
     const runs = db
       .prepare(
         `SELECT id, triggered_by, post_count, status, started_at, completed_at,
                 total_input_tokens, total_output_tokens, total_cost_cents
          FROM ai_runs
-         WHERE status = 'completed'
+         WHERE status = 'completed' AND persona_id = ?
          ORDER BY id DESC LIMIT 20`
       )
-      .all();
+      .all(personaId);
     const totalCostCents = db
       .prepare(
-        "SELECT COALESCE(SUM(total_cost_cents), 0) as total FROM ai_runs WHERE status = 'completed'"
+        "SELECT COALESCE(SUM(total_cost_cents), 0) as total FROM ai_runs WHERE status = 'completed' AND persona_id = ?"
       )
-      .get() as { total: number };
+      .get(personaId) as { total: number };
     return { runs, total_cost_cents: totalCostCents.total };
   });
 
@@ -261,8 +265,9 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
       `SELECT id, triggered_by, post_count, completed_at
        FROM ai_runs WHERE status = 'completed'
          AND triggered_by NOT LIKE '%tagging%'
+         AND persona_id = ?
        ORDER BY id DESC LIMIT 1`
-    ).get() as { id: number; triggered_by: string; post_count: number; completed_at: string } | undefined;
+    ).get(personaId) as { id: number; triggered_by: string; post_count: number; completed_at: string } | undefined;
 
     const schedule = getSetting(db, "auto_interpret_schedule") ?? "weekly";
     const postThreshold = parseInt(getSetting(db, "auto_interpret_post_threshold") ?? "5", 10);
