@@ -44,7 +44,7 @@ async function loadStatus() {
         lastSyncEl.textContent = formatTimeAgo(response.lastSyncAt);
       }
       if (response?.syncInProgress) {
-        syncBtn.textContent = "Syncing...";
+        syncBtn.textContent = response.syncProgress ?? "Syncing...";
         syncBtn.disabled = true;
       }
     }

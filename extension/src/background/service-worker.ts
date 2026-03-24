@@ -1,9 +1,17 @@
 import type {
   ScrapedPost,
   ScrapedPostMetrics,
+  ScrapedCompanyPost,
   ContentMessage,
 } from "../shared/types.js";
 import { activityIdToDate } from "../shared/utils.js";
+
+interface SyncPersona {
+  id: number;
+  name: string;
+  linkedin_url: string;
+  type: "personal" | "company_page";
+}
 
 const SERVER_URL = "http://localhost:3210";
 const ALARM_NAME = "daily-sync";
@@ -83,19 +91,32 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 async function getSyncStatus() {
-  const { syncInProgress } = await chrome.storage.session.get("syncInProgress");
-  // Read last sync time from server (survives extension reinstalls)
+  const { syncInProgress, syncPersonas, syncPersonaIndex } = await chrome.storage.session.get([
+    "syncInProgress", "syncPersonas", "syncPersonaIndex",
+  ]);
+  // Read last sync time from server (persona 1 as default)
   let lastSyncAt: number | null = null;
   try {
-    const res = await fetch(`${SERVER_URL}/api/sync-state`);
+    const res = await fetch(`${SERVER_URL}/api/personas/1/sync-state`);
     if (res.ok) {
       const data = await res.json();
       lastSyncAt = data.last_sync_at ?? null;
     }
   } catch {}
+
+  // Build persona progress info if syncing
+  let syncProgress: string | null = null;
+  if (syncInProgress && syncPersonas && syncPersonaIndex != null) {
+    const current = syncPersonas[syncPersonaIndex];
+    if (current) {
+      syncProgress = `Syncing ${current.name} (${syncPersonaIndex + 1}/${syncPersonas.length})`;
+    }
+  }
+
   return {
     lastSyncAt,
     syncInProgress: syncInProgress ?? false,
+    syncProgress,
   };
 }
 
@@ -164,9 +185,9 @@ async function trySync(manual = false) {
     });
     if (!inSyncWindow) return;
 
-    // Check if we already synced during this window
+    // Check if we already synced during this window (check persona 1 as proxy)
     try {
-      const res = await fetch(`${SERVER_URL}/api/sync-state`);
+      const res = await fetch(`${SERVER_URL}/api/personas/1/sync-state`);
       if (res.ok) {
         const data = await res.json();
         // Skip if synced within the last 6 hours (prevents double-sync in same window)
@@ -187,10 +208,158 @@ async function trySync(manual = false) {
 }
 
 async function startSync() {
+  // Fetch persona list from server
+  let personas: SyncPersona[] = [];
+  try {
+    const res = await fetch(`${SERVER_URL}/api/personas`);
+    if (res.ok) {
+      const data = await res.json();
+      personas = data.personas;
+    }
+  } catch {}
+
+  if (personas.length === 0) {
+    personas = [{ id: 1, name: "Default", linkedin_url: "", type: "personal" }];
+  }
+
+  await chrome.storage.session.set({
+    syncInProgress: true,
+    syncPersonas: personas,
+    syncPersonaIndex: 0,
+  });
+
+  await syncNextPersona();
+}
+
+async function syncNextPersona() {
+  const { syncPersonas, syncPersonaIndex } = await chrome.storage.session.get([
+    "syncPersonas", "syncPersonaIndex",
+  ]);
+
+  if (!syncPersonas || syncPersonaIndex >= syncPersonas.length) {
+    await finishSync();
+    return;
+  }
+
+  const persona: SyncPersona = syncPersonas[syncPersonaIndex];
+
+  // Store active persona ID so postToServer can route correctly
+  await chrome.storage.session.set({ syncActivePersonaId: persona.id });
+
+  if (persona.type === "company_page") {
+    await syncCompanyPersona(persona);
+  } else {
+    await syncPersonalPersona(persona);
+  }
+}
+
+async function syncCompanyPersona(persona: SyncPersona) {
+  // Extract company identifier from URL (supports numeric IDs and string slugs)
+  const companyMatch = persona.linkedin_url.match(/\/company\/([^/]+)/);
+  if (!companyMatch) {
+    console.warn(`Skipping persona ${persona.name}: no company ID in URL`);
+    await advanceToNextPersona();
+    return;
+  }
+  const companyId = companyMatch[1];
+
+  const tab = await chrome.tabs.create({
+    active: false,
+    url: `https://www.linkedin.com/company/${companyId}/admin/analytics/updates`,
+  });
+
+  if (!tab.id) { await advanceToNextPersona(); return; }
+
+  await chrome.storage.session.set({ syncTabId: tab.id });
+  await waitForTabLoad(tab.id);
+
+  // Check if we were redirected (user is not a page admin)
+  const currentTab = await chrome.tabs.get(tab.id);
+  if (!currentTab.url?.includes(`/company/${companyId}/admin/`)) {
+    console.warn(`Skipping persona ${persona.name}: not a page admin (redirected to ${currentTab.url})`);
+    await chrome.tabs.remove(tab.id);
+    await advanceToNextPersona();
+    return;
+  }
+
+  await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
+
+  // Scrape analytics page — handle pagination
+  let allAnalyticsData: ScrapedCompanyPost[] = [];
+  let hasMorePages = true;
+
+  while (hasMorePages) {
+    const analyticsResult = await sendScrapeCommand(tab.id);
+    if (analyticsResult.type === "company-analytics") {
+      allAnalyticsData.push(...analyticsResult.data);
+    }
+
+    const paginationCheck = await chrome.tabs.sendMessage(tab.id, { type: "check-pagination" });
+    hasMorePages = paginationCheck?.hasMore === true;
+
+    if (hasMorePages) {
+      await chrome.tabs.sendMessage(tab.id, { type: "click-next-page" });
+      await waitForTabLoad(tab.id);
+      await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
+    }
+  }
+
+  if (allAnalyticsData.length > 0) {
+    await postToServer({
+      posts: allAnalyticsData.map((p) => ({
+        id: p.id,
+        content_preview: p.content_preview,
+        content_type: p.content_type,
+        published_at: p.published_at,
+        url: p.url,
+      })),
+      post_metrics: allAnalyticsData.map((p) => ({
+        post_id: p.id,
+        impressions: p.impressions,
+        reactions: p.reactions,
+        comments: p.comments,
+        reposts: p.reposts,
+        clicks: p.clicks,
+        click_through_rate: p.click_through_rate,
+        follows: p.follows,
+        engagement_rate: p.engagement_rate,
+      })),
+    });
+  }
+
+  // Navigate to page posts for content
+  await chrome.tabs.update(tab.id, {
+    url: `https://www.linkedin.com/company/${companyId}/admin/page-posts/published`,
+  });
+  await waitForTabLoad(tab.id);
+  await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
+
+  const postsResult = await sendScrapeCommand(tab.id);
+  if (postsResult.type === "company-posts") {
+    await postToServer({
+      post_content: postsResult.data,
+    });
+  }
+
+  await chrome.tabs.remove(tab.id);
+
+  // Update per-persona sync state
+  try {
+    await fetch(`${SERVER_URL}/api/personas/${persona.id}/sync-state`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ last_sync_at: Date.now() }),
+    });
+  } catch {}
+
+  await advanceToNextPersona();
+}
+
+async function syncPersonalPersona(persona: SyncPersona) {
   // Determine sync type: backfill (first ever), light (evening), or full (morning)
   let isBackfill = true;
   try {
-    const res = await fetch(`${SERVER_URL}/api/sync-state`);
+    const res = await fetch(`${SERVER_URL}/api/personas/${persona.id}/sync-state`);
     if (res.ok) {
       const data = await res.json();
       isBackfill = !data.last_sync_at;
@@ -202,7 +371,6 @@ async function startSync() {
   const isLightSync = !isBackfill && (currentHour >= 20 || currentHour <= 1);
 
   await chrome.storage.session.set({
-    syncInProgress: true,
     syncBatchCursor: 0,
     syncPosts: [],
     isBackfill,
@@ -235,8 +403,6 @@ async function startSync() {
       const posts = topPostsResult.data as ScrapedPost[];
 
       // POST posts to server (with offline queue fallback)
-      // Include thumbnail URLs as image_urls so the server can download them
-      // The response tells us what still needs scraping (no extra API calls needed)
       const ingestResult = await postToServer({
         posts: posts.map((p) => ({
           id: p.id,
@@ -264,21 +430,14 @@ async function startSync() {
           "[ReachLab] Post page scraping failed:",
           err.message
         );
-        // Non-fatal — continue with detail metrics
       }
 
-      // Filter posts for detail scraping:
-      // - Backfill: scrape all posts
-      // - Light sync (evening): only the most recent N posts
-      // - Full sync (morning): posts <30 days old, skip those with recent metrics
-      // - Always include posts that have never had metrics (not on top-posts page)
       const recentMetricsSet = new Set<string>(ingestResult?.has_recent_metrics ?? []);
       const needsMetricsIds: string[] = ingestResult?.needs_metrics ?? [];
       let postIdsToScrape: string[];
       if (isBackfill) {
         postIdsToScrape = posts.map((p) => p.id);
       } else if (isLightSync) {
-        // Evening: just get updated stats for the most recent posts
         postIdsToScrape = posts
           .slice(0, LIGHT_SYNC_RECENT_POSTS)
           .map((p) => p.id);
@@ -293,7 +452,6 @@ async function startSync() {
             })
             .map((p) => p.id);
       }
-      // Add posts that have never had metrics scraped (e.g. not on top-posts page)
       const alreadyIncluded = new Set(postIdsToScrape);
       for (const id of needsMetricsIds) {
         if (!alreadyIncluded.has(id)) {
@@ -301,14 +459,12 @@ async function startSync() {
         }
       }
 
-      // Store posts for batch detail scraping
       await chrome.storage.session.set({
         syncPosts: postIdsToScrape,
         syncBatchCursor: 0,
       });
 
       if (postIdsToScrape.length === 0) {
-        // No detail pages to scrape, go straight to remaining pages
         await scrapeRemainingPages(tab.id);
       } else {
         await processBatch(tab.id, postIdsToScrape, 0, isBackfill);
@@ -319,6 +475,12 @@ async function startSync() {
   } catch (err: any) {
     await finishSyncWithError(err.message);
   }
+}
+
+async function advanceToNextPersona() {
+  const { syncPersonaIndex } = await chrome.storage.session.get("syncPersonaIndex");
+  await chrome.storage.session.set({ syncPersonaIndex: (syncPersonaIndex ?? 0) + 1 });
+  await syncNextPersona();
 }
 
 async function continueSyncBatch() {
@@ -543,11 +705,15 @@ async function scrapePostPages(
 }
 
 async function scrapeRemainingPages(tabId: number) {
-  const { isBackfill, isLightSync } = await chrome.storage.session.get(["isBackfill", "isLightSync"]);
+  const { isBackfill, isLightSync, syncActivePersonaId } = await chrome.storage.session.get([
+    "isBackfill", "isLightSync", "syncActivePersonaId",
+  ]);
+  const personaId = syncActivePersonaId ?? 1;
 
-  // Light sync skips audience/profile/search — just finish
+  // Light sync skips audience/profile/search — just finish this persona
   if (isLightSync) {
-    await finishSync();
+    await finishPersonaSync(personaId);
+    await advanceToNextPersona();
     return;
   }
 
@@ -606,10 +772,22 @@ async function scrapeRemainingPages(tabId: number) {
       await postToServer({ profile: profileData });
     }
 
-    await finishSync();
+    await finishPersonaSync(personaId);
+    await advanceToNextPersona();
   } catch (err: any) {
     await finishSyncWithError(err.message);
   }
+}
+
+/** Update per-persona sync timestamp on the server */
+async function finishPersonaSync(personaId: number) {
+  try {
+    await fetch(`${SERVER_URL}/api/personas/${personaId}/sync-state`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ last_sync_at: Date.now() }),
+    });
+  } catch {}
 }
 
 /**
@@ -688,24 +866,27 @@ async function continueBackfill() {
 }
 
 async function finishSync() {
-  const { syncTabId } = await chrome.storage.session.get("syncTabId");
+  const { syncTabId, syncActivePersonaId } = await chrome.storage.session.get([
+    "syncTabId", "syncActivePersonaId",
+  ]);
   if (syncTabId) {
     try {
       await chrome.tabs.remove(syncTabId);
     } catch {}
   }
 
-  // Check for posts needing content or image backfill
+  const personaId = syncActivePersonaId ?? 1;
+
+  // Check for posts needing content or image backfill (per-persona)
   try {
     const [contentRes, imagesRes, videoRes] = await Promise.all([
-      fetch(`${SERVER_URL}/api/posts/needs-content`),
-      fetch(`${SERVER_URL}/api/posts/needs-images`),
-      fetch(`${SERVER_URL}/api/posts/needs-video-url`),
+      fetch(`${SERVER_URL}/api/personas/${personaId}/posts/needs-content`),
+      fetch(`${SERVER_URL}/api/personas/${personaId}/posts/needs-images`),
+      fetch(`${SERVER_URL}/api/personas/${personaId}/posts/needs-video-url`),
     ]);
     const contentIds = contentRes.ok ? (await contentRes.json()).post_ids : [];
     const imageIds = imagesRes.ok ? (await imagesRes.json()).post_ids : [];
     const videoIds = videoRes.ok ? (await videoRes.json()).post_ids : [];
-    // Deduplicate
     const allIds = [...new Set([...contentIds, ...imageIds, ...videoIds])];
     if (allIds.length > 0) {
       await chrome.storage.session.set({
@@ -718,19 +899,14 @@ async function finishSync() {
     // Non-fatal — backfill will happen next sync
   }
 
-  // Persist sync timestamp server-side (survives extension reinstalls)
-  try {
-    await fetch(`${SERVER_URL}/api/sync-state`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ last_sync_at: Date.now() }),
-    });
-  } catch {}
   await chrome.storage.session.set({
     syncInProgress: false,
     syncTabId: null,
     syncPosts: null,
     syncBatchCursor: null,
+    syncPersonas: null,
+    syncPersonaIndex: null,
+    syncActivePersonaId: null,
   });
 }
 
@@ -812,8 +988,9 @@ async function sendScrapeCommand(tabId: number): Promise<ContentMessage> {
 }
 
 /** POST to server directly — throws on failure */
-async function postToServerDirect(payload: Record<string, unknown>) {
-  const response = await fetch(`${SERVER_URL}/api/ingest`, {
+async function postToServerDirect(payload: Record<string, unknown>, personaId?: number) {
+  const pid = personaId ?? (await chrome.storage.session.get("syncActivePersonaId")).syncActivePersonaId ?? 1;
+  const response = await fetch(`${SERVER_URL}/api/personas/${pid}/ingest`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
