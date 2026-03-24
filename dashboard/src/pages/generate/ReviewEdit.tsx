@@ -2,6 +2,20 @@ import { useState, useRef, useEffect } from "react";
 import { api, type GenDraft, type GenCoachCheckQuality, type GenStory } from "../../api/client";
 import AlignmentCard from "./components/AlignmentCard";
 import PostDetailsCard from "./components/PostDetailsCard";
+import ScannerLoader from "./components/ScannerLoader";
+
+const REVISION_MESSAGES = [
+  "Revising the draft...",
+  "Applying your feedback...",
+  "Reworking the structure...",
+  "Tightening the argument...",
+  "Removing filler...",
+  "Sharpening the hook...",
+  "Checking voice consistency...",
+  "Polishing transitions...",
+  "Running quality checks...",
+  "Almost there...",
+];
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -102,20 +116,13 @@ export default function ReviewEdit({ gen, setGen, loading, setLoading, onBack, o
   const storyHeadline = gen.selectedStoryIndex !== null ? gen.stories[gen.selectedStoryIndex]?.headline || "" : "";
   const structureLabel = gen.drafts[gen.selectedDraftIndices[0]]?.structure_label || "";
 
-  const shortcutChips = [
-    { label: "Shorten", prompt: "Make this post shorter and punchier. Cut anything that doesn't earn its place. Target 20-30% shorter." },
-    { label: "Strengthen close", prompt: "Rewrite just the closing. Make it a sharper question that invites informed disagreement or practitioner reflection." },
-    { label: "Regenerate", prompt: "Regenerate this draft from scratch with a different angle and structure, keeping the same core topic and research." },
-  ];
+  const regeneratePrompt = "Regenerate this draft from scratch with a different angle and structure, keeping the same core topic and research.";
 
   const expertiseItems = gen.qualityGate?.expertise_needed ?? [];
   const alignmentItems = gen.qualityGate?.alignment ?? [];
 
-  // Build contextual placeholder from first unaddressed expertise item
   const hasConversation = gen.chatMessages.length > 0;
-  const placeholderText = !hasConversation && expertiseItems.length > 0
-    ? expertiseItems[0].question
-    : "Tell the AI what to change...";
+  const placeholderText = "e.g. Make it shorter, add a stronger hook, change the tone...";
 
   // Build initial expertise prompts as conversation starters (shown before any user messages)
   const expertisePrompts = !hasConversation && expertiseItems.length > 0
@@ -124,6 +131,10 @@ export default function ReviewEdit({ gen, setGen, loading, setLoading, onBack, o
         question: item.question,
       }))
     : [];
+
+  if (loading) {
+    return <ScannerLoader messages={REVISION_MESSAGES} interval={2000} />;
+  }
 
   return (
     <div>
@@ -168,12 +179,19 @@ export default function ReviewEdit({ gen, setGen, loading, setLoading, onBack, o
                   Post Retro
                 </button>
               )}
+              <button
+                onClick={() => sendMessage(regeneratePrompt)}
+                disabled={loading}
+                className="px-4 py-2 bg-gen-bg-3 border border-gen-border-2 text-gen-text-2 text-[13px] font-medium rounded-[10px] hover:border-gen-border-3 hover:text-gen-text-1 transition-colors disabled:opacity-50"
+              >
+                Regenerate
+              </button>
             </div>
           </div>
 
-          {/* Conversation area */}
+          {/* Feedback area */}
           <div className="mt-4 space-y-3">
-            {/* Expertise prompts — shown before any conversation as questions from the AI */}
+            {/* Expertise prompts — things the AI wants to know */}
             {expertisePrompts.length > 0 && (
               <div className="space-y-2">
                 {expertisePrompts.map((item, i) => (
@@ -184,32 +202,6 @@ export default function ReviewEdit({ gen, setGen, loading, setLoading, onBack, o
                 ))}
               </div>
             )}
-
-            {/* Chat history */}
-            {gen.chatMessages.length > 0 && (
-              <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                {gen.chatMessages.map((msg, i) => (
-                  <div key={i} className={`text-[12.5px] leading-snug ${msg.role === "user" ? "text-gen-text-1" : "text-gen-text-2 pl-3 border-l-2 border-gen-accent/30"}`}>
-                    {msg.content}
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-            )}
-
-            {/* Shortcut chips */}
-            <div className="flex gap-1.5">
-              {shortcutChips.map((chip) => (
-                <button
-                  key={chip.label}
-                  onClick={() => sendMessage(chip.prompt)}
-                  disabled={loading}
-                  className="px-3 py-1.5 bg-gen-bg-3 border border-gen-border-2 text-gen-text-2 text-[11px] rounded-lg hover:border-gen-border-3 hover:text-gen-text-1 transition-colors disabled:opacity-50"
-                >
-                  {chip.label}
-                </button>
-              ))}
-            </div>
 
             {/* Chat input */}
             <div className="flex gap-2">
@@ -234,6 +226,18 @@ export default function ReviewEdit({ gen, setGen, loading, setLoading, onBack, o
                 {loading ? "..." : "Send"}
               </button>
             </div>
+
+            {/* Chat history */}
+            {gen.chatMessages.length > 0 && (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {gen.chatMessages.map((msg, i) => (
+                  <div key={i} className={`text-[12.5px] leading-snug ${msg.role === "user" ? "text-gen-text-1" : "text-gen-text-2 pl-3 border-l-2 border-gen-accent/30"}`}>
+                    {msg.content}
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+            )}
 
             {/* Chat error */}
             {chatError && (

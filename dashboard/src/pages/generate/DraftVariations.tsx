@@ -2,6 +2,30 @@ import { useState } from "react";
 import { api, type GenDraft } from "../../api/client";
 import DraftSidebar from "./components/DraftSidebar";
 import DraftReader from "./components/DraftReader";
+import ScannerLoader from "./components/ScannerLoader";
+
+const COMBINING_MESSAGES = [
+  "Analyzing draft structures...",
+  "Identifying strongest hooks...",
+  "Developing core themes...",
+  "Removing AI tropes...",
+  "Tightening the argument...",
+  "Sharpening contrarian angles...",
+  "Grounding in practitioner voice...",
+  "Cutting filler and clichés...",
+  "Strengthening the close...",
+  "Crafting engagement hooks...",
+  "Weaving personal connection...",
+  "Polishing transitions...",
+  "Checking word count...",
+  "Optimizing for readability...",
+  "Building the final draft...",
+  "Eliminating passive voice...",
+  "Adding specificity...",
+  "Testing the opening line...",
+  "Refining the takeaway...",
+  "Final quality check...",
+];
 
 interface DraftVariationsProps {
   gen: {
@@ -57,6 +81,10 @@ export default function DraftVariations({ gen, setGen, loading, setLoading, onBa
 
   const actionLabel = selectedCount <= 1 ? "Review" : "Combine & review";
 
+  if (loading) {
+    return <ScannerLoader messages={COMBINING_MESSAGES} interval={2000} />;
+  }
+
   return (
     <div>
       <div className="flex min-h-[60vh]">
@@ -108,10 +136,10 @@ export default function DraftVariations({ gen, setGen, loading, setLoading, onBa
           )}
           <button
             onClick={handleCombineAndReview}
-            disabled={selectedCount === 0 || loading}
+            disabled={selectedCount === 0}
             className="px-4 py-2 bg-gen-text-0 text-gen-bg-0 text-[13px] font-medium rounded-[10px] hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {loading ? "Processing..." : actionLabel}
+            {actionLabel}
           </button>
         </div>
       </div>
