@@ -2,28 +2,44 @@
 
 Your LinkedIn data is trapped behind a dashboard you don't own.
 
-ReachLab gets it out. A Chrome extension collects your post metrics automatically, stores everything locally in SQLite, and runs an AI coach that tells you what's working and what to write next.
+ReachLab gets it out. A Chrome extension collects your post metrics automatically, stores everything locally in SQLite, and gives you an AI-powered writing studio that learns what you write about and helps you write more of it.
 
 No SaaS. No data sharing. Runs on your machine.
 
 ## What it does
 
-**Collects everything LinkedIn shows you, automatically.** The extension runs in the background and captures post impressions, reactions, comments, reposts, follower growth, profile views, and search appearances. Video posts are automatically transcribed locally using whisper.cpp so their content is searchable and analyzable alongside text posts.
+**Collects everything LinkedIn shows you, automatically.** The extension runs in the background and captures post impressions, reactions, comments, reposts, new followers, follower growth, profile views, and search appearances. Video posts are automatically transcribed locally using whisper.cpp so their content is searchable and analyzable alongside text posts.
 
 **Builds a real content history.** LinkedIn only shows you the last year of posts with limited filtering. This stores every post with full text, images, content type classification, and complete metric history — giving you a dataset that gets more valuable over time.
 
-**Analyzes what's actually driving your engagement.** The AI coach doesn't just tell you your numbers went up. It discovers your content taxonomy (the topics you actually write about), tracks which topics and formats perform best, identifies trends across your posting history, and generates specific recommendations with evidence. Insights persist across analysis runs — the system tracks which patterns are strengthening, reversing, or fading.
+**Analyzes what's actually driving your engagement.** The AI coach discovers your content taxonomy (the topics you actually write about), tracks which topics, hook types, and formats perform best, identifies trends across your posting history, and generates specific recommendations with evidence. Insights persist across analysis runs — the system tracks which patterns are strengthening, reversing, or fading.
 
-**Helps you write better posts.** A writing prompt system exports a ready-to-use prompt with your top-performing posts as a style guide. Paste it into any LLM and it already knows how you write.
+**Generates posts in your voice.** The Generate tab is a full writing studio: it scans your RSS sources for timely topics, drafts multiple variations with your style and expertise baked in, runs an AI coach-check against your best practices, and lets you revise through conversation. After publishing, a retro step helps you track what worked.
+
+**Learns how you write.** An optional voice interview (using OpenAI's Realtime API) captures your perspective and writing style in a 5-minute conversation. Combined with analysis of your past posts, this builds a writing prompt that any AI can use to write like you.
 
 ## Dashboard
 
 - **Overview** — KPI summary with period-over-period comparisons, top performer highlight, and quick insights
 - **Posts** — Full post history with sortable metrics, content type filtering, and engagement rate calculations
-- **Coach** — AI-generated recommendations with priority/confidence ratings, persistent insights with trend tracking, deep-dive analytics (category performance, engagement quality, timing analysis)
+- **Coach** — AI-generated recommendations with priority/confidence ratings, persistent insights with trend tracking, deep-dive breakdowns by topic, hook type, and image subtype
+- **Generate** — Full writing pipeline: topic discovery from RSS feeds → multiple draft variations → AI coach-check and conversational revision → post retro after publishing
 - **Timing** — Heatmap of when your posts get the most engagement, broken down by day and hour
 - **Followers** — Growth tracking over time
-- **Settings** — Writing prompt editor with revision history, author photo for image classification, timezone configuration
+- **Settings** — Writing prompt editor with revision history, author profile, source management, timezone configuration, re-run onboarding wizard
+
+## Onboarding
+
+First-time users get a guided setup wizard that walks through:
+
+1. **Install the Chrome extension** — step-by-step instructions with platform-specific paths
+2. **Sync your LinkedIn posts** — connect to LinkedIn analytics and import your history
+3. **Analyze your writing** — AI discovers your topics and builds a writing style profile
+4. **Voice interview** (optional) — a 5-minute voice conversation to capture your perspective and tone
+5. **Source discovery** — auto-discovers relevant RSS feeds based on your topics, or add your own
+6. **Done** — drops you into the Generate tab, ready to write
+
+The wizard can be skipped at any step and re-run from Settings.
 
 ## Architecture
 
@@ -39,14 +55,16 @@ React Dashboard (Tailwind CSS + Chart.js)
 
 The extension uses `webRequest` to passively capture video streaming URLs, DOM scraping for post content and metrics, and background tabs for automated collection. Sync state is stored server-side so reinstalling the extension doesn't lose progress.
 
-The AI pipeline runs locally through OpenRouter (Claude Haiku for taxonomy and tagging, Sonnet for analysis, Haiku for summaries) and can be triggered automatically after data collection or manually from the dashboard.
+The AI pipeline runs through OpenRouter (Claude Haiku for taxonomy and tagging, Sonnet for analysis and drafting) and Perplexity Sonar Pro (for source discovery and research). Source discovery and the voice interview use the OpenAI Realtime API.
 
 ## Prerequisites
 
 - **Node.js** >= 20
-- **npm** (comes with Node)
+- **pnpm** (`npm install -g pnpm`)
 - **Chrome** or Chromium-based browser
-- **OpenRouter API key** (optional, for AI Coach features)
+- **OpenRouter API key** (for AI Coach and Generate features)
+- **Perplexity API key** (optional, for source discovery and research)
+- **OpenAI API key** (optional, for voice interview)
 - **ffmpeg** (optional, for video transcription — `brew install ffmpeg`)
 - **whisper-cpp** (optional, for video transcription — `brew install whisper-cpp`)
 
@@ -55,67 +73,69 @@ The AI pipeline runs locally through OpenRouter (Claude Haiku for taxonomy and t
 ### 1. Install dependencies
 
 ```bash
-npm install
+pnpm install
 ```
 
 This installs all three workspaces (server, dashboard, extension).
 
-### 2. Build the dashboard
+### 2. Configure API keys
 
-```bash
-npm run build:dashboard
+Create a `.env` file in `server/`:
+
+```
+TRUSTMIND_LLM_API_KEY=sk-or-...
 ```
 
-The server serves the built dashboard as static files.
-
-### 3. Start the server
-
-```bash
-npm start
+Optional keys for additional features:
+```
+PERPLEXITY_API_KEY=pplx-...    # Source discovery & research
+OPENAI_API_KEY=sk-...          # Voice interview
 ```
 
-The server starts on **http://localhost:3210**. On first run, it creates the SQLite database at `data/linkedin.db` and runs all migrations automatically.
+### 3. Start the app
+
+```bash
+pnpm dev
+```
+
+This starts both the server and dashboard in development mode. Open **http://localhost:3210** — the onboarding wizard will guide you through the rest.
+
+If this is your first time, the wizard will walk you through installing the extension, syncing your posts, and setting up your writing profile.
 
 ### 4. Install the Chrome extension
 
-1. Build the extension:
-   ```bash
-   npm run build:extension
-   ```
-2. Open Chrome and go to `chrome://extensions/`
-3. Enable **Developer mode** (toggle in top-right)
-4. Click **Load unpacked**
-5. Select the `extension/dist/` directory
-6. Pin the extension to your toolbar
+The onboarding wizard gives you step-by-step instructions, but here's the summary:
 
-### 5. Run the initial data collection
+1. Open Chrome and go to `chrome://extensions/`
+2. Enable **Developer mode** (toggle in top-right)
+3. Click **Load unpacked**
+4. Select the `extension/` folder in your ReachLab directory
+5. Pin the extension to your toolbar
 
-1. Make sure the server is running (`npm start`)
-2. Open LinkedIn in Chrome and navigate to your analytics page:
-   - Go to **linkedin.com** → Click your profile → **Analytics & tools** → **Post impressions**
-3. The extension will automatically detect the analytics pages and begin scraping
-4. You can also click the extension icon and hit **Sync Now** to trigger a manual collection
-5. The extension collects: post metrics, follower counts, profile views, and search appearances
+### 5. Sync your LinkedIn posts
 
-The first sync may take a minute as it walks through your posts. Subsequent syncs run automatically every 24 hours when Chrome is open with the extension active.
+1. Make sure the server is running (`pnpm dev`)
+2. Navigate to your LinkedIn analytics: **linkedin.com** → **Me** → **Analytics** → or go directly to `linkedin.com/analytics/creator/content/`
+3. The extension automatically detects the page and begins scraping
+4. The first sync may take a minute as it walks through your posts. Subsequent syncs run automatically every 24 hours.
 
-### 6. Open the dashboard
+### 6. Run AI analysis
 
-Go to **http://localhost:3210** in your browser. You should see your posts and metrics populating.
+After syncing, go to the **Coach** tab and click **Refresh AI**. This discovers your content taxonomy, classifies posts by topic, identifies engagement patterns, and generates recommendations.
 
-## AI Coach (Optional)
+## Production
 
-The AI Coach analyzes your posting patterns and generates actionable recommendations. To enable it:
+For production use (no hot-reload, optimized build):
 
-1. Get an API key from [OpenRouter](https://openrouter.ai/keys)
-2. Create a `.env` file in the project root:
-   ```
-   TRUSTMIND_LLM_API_KEY=sk-or-...
-   ```
-3. Restart the server
-4. Go to the **Coach** tab in the dashboard and click **Refresh AI**
+```bash
+pnpm build        # Builds dashboard + extension
+pnpm start         # Starts server on port 3210
+```
 
-The AI pipeline discovers your content taxonomy, classifies posts by topic and format, identifies engagement patterns, and generates prioritized recommendations with evidence. It tracks insights across runs so you can see which patterns are strengthening or fading over time.
+Or use the convenience script:
+```bash
+./start.sh
+```
 
 ## Video Transcription (Optional)
 
@@ -138,14 +158,13 @@ Transcription runs automatically on server startup and when new video posts are 
 ## Development
 
 ```bash
-# Run server in watch mode (auto-restarts on changes)
-npm run dev
+pnpm dev           # Server (watch mode, port 3211) + Dashboard (Vite HMR, port 3210)
+pnpm test          # Run tests
+```
 
-# Run dashboard dev server (hot reload on port 5173, proxies API to 3210)
-cd dashboard && npm run dev
-
-# Run tests
-npm test
+Use `REACHLAB_DB` to point at an alternate database for testing:
+```bash
+REACHLAB_DB=/tmp/test.db pnpm dev
 ```
 
 ## Project Structure
@@ -153,14 +172,16 @@ npm test
 ```
 ├── server/           # Fastify API server
 │   ├── src/
-│   │   ├── ai/       # AI analysis pipeline, video transcription
+│   │   ├── ai/       # AI analysis, drafting, coaching, transcription
 │   │   ├── db/       # SQLite schema, migrations, queries
-│   │   ├── routes/   # API endpoints
+│   │   ├── routes/   # API endpoints (generate, insights, profile, settings)
 │   │   └── index.ts  # Server entrypoint
 │   └── package.json
 ├── dashboard/        # React frontend (Vite + Tailwind)
 │   ├── src/
-│   │   ├── pages/    # Overview, Posts, Coach, Timing, Followers, Settings
+│   │   ├── pages/    # Overview, Posts, Coach, Generate, Timing, Followers, Settings
+│   │   │   ├── generate/    # Discovery, drafting, review, retro pipeline
+│   │   │   └── onboarding/  # First-run setup wizard
 │   │   ├── api/      # API client with TypeScript types
 │   │   └── index.css # Design tokens and theme
 │   └── package.json
@@ -171,5 +192,5 @@ npm test
 │   │   └── popup/       # Extension popup UI
 │   └── manifest.json
 ├── data/             # SQLite database + models (gitignored)
-└── docs/             # Design specs and research
+└── docs/             # Design specs and plans
 ```
