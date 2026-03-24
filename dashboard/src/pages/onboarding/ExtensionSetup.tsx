@@ -95,14 +95,12 @@ export default function ExtensionSetup({ onNext, onSkip }: ExtensionSetupProps) 
           <div>
             <p className="text-[13px] text-text-primary">
               Click &ldquo;Load unpacked&rdquo; and select the{" "}
-              <code className="text-[12px] bg-surface-2 px-1.5 py-0.5 rounded">extension</code> folder inside your ReachLab directory
+              <code className="text-[12px] bg-surface-2 px-1.5 py-0.5 rounded">extension/dist</code> folder inside your ReachLab directory
             </p>
             <p className="text-[11px] text-text-muted mt-1">
-              {navigator.platform.startsWith("Mac")
-                ? "Usually ~/code/linkedin/extension or wherever you cloned ReachLab"
-                : navigator.platform.startsWith("Win")
-                  ? "Usually C:\\Users\\YourName\\code\\linkedin\\extension or wherever you cloned ReachLab"
-                  : "Usually ~/code/linkedin/extension or wherever you cloned ReachLab"}
+              {navigator.platform.startsWith("Win")
+                ? "e.g. C:\\Users\\YourName\\reachlab\\extension\\dist"
+                : "e.g. ~/reachlab/extension/dist"}
             </p>
           </div>
         </div>

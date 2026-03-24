@@ -55,24 +55,30 @@ React Dashboard (Tailwind CSS + Chart.js)
 
 The extension uses `webRequest` to passively capture video streaming URLs, DOM scraping for post content and metrics, and background tabs for automated collection. Sync state is stored server-side so reinstalling the extension doesn't lose progress.
 
-The AI pipeline runs through OpenRouter (Claude Haiku for taxonomy and tagging, Sonnet for analysis and drafting) and Perplexity Sonar Pro (for source discovery and research). Source discovery and the voice interview use the OpenAI Realtime API.
+The AI pipeline runs through OpenRouter (Claude Haiku for taxonomy and tagging, Sonnet for analysis and drafting) and Perplexity Sonar Pro (for source discovery and research). The voice interview uses the OpenAI Realtime API.
 
 ## Prerequisites
 
-- **Node.js** >= 20
-- **pnpm** (`npm install -g pnpm`)
-- **Chrome** or Chromium-based browser
-- **OpenRouter API key** (for AI Coach and Generate features)
-- **Perplexity API key** (optional, for source discovery and research)
-- **OpenAI API key** (optional, for voice interview)
-- **ffmpeg** (optional, for video transcription — `brew install ffmpeg`)
-- **whisper-cpp** (optional, for video transcription — `brew install whisper-cpp`)
+- **Node.js** >= 20 ([download](https://nodejs.org/))
+- **pnpm** — install with `npm install -g pnpm` or `corepack enable`
+- **Chrome** or Chromium-based browser (Edge, Brave, Arc, etc.)
+- **OpenRouter API key** — required for AI Coach and Generate ([get one here](https://openrouter.ai/keys))
+- **Perplexity API key** (optional) — for source discovery and research
+- **OpenAI API key** (optional) — for voice interview
+
+### Platform notes
+
+**macOS/Linux:** Everything works out of the box. Video transcription requires `brew install ffmpeg whisper-cpp` (optional).
+
+**Windows:** Works natively — Node.js, pnpm, and SQLite all run on Windows without WSL. Use PowerShell or Command Prompt and run `pnpm dev` the same way. The only difference: skip `start.sh` (it's a bash script) and run `pnpm dev` directly. For video transcription, install ffmpeg from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and whisper.cpp from its [GitHub releases](https://github.com/ggerganov/whisper.cpp/releases).
 
 ## Quick Start
 
-### 1. Install dependencies
+### 1. Clone and install
 
 ```bash
+git clone https://github.com/trustmindcom/reachlab.git
+cd reachlab
 pnpm install
 ```
 
@@ -80,71 +86,87 @@ This installs all three workspaces (server, dashboard, extension).
 
 ### 2. Configure API keys
 
-Create a `.env` file in `server/`:
+Create a file called `.env` inside the `server/` folder:
 
 ```
 TRUSTMIND_LLM_API_KEY=sk-or-...
 ```
 
-Optional keys for additional features:
+Optional keys (add to the same file):
 ```
 PERPLEXITY_API_KEY=pplx-...    # Source discovery & research
 OPENAI_API_KEY=sk-...          # Voice interview
 ```
 
-### 3. Start the app
+### 3. Build the Chrome extension
+
+```bash
+pnpm build:extension
+```
+
+### 4. Start the app
 
 ```bash
 pnpm dev
 ```
 
-This starts both the server and dashboard in development mode. Open **http://localhost:3210** — the onboarding wizard will guide you through the rest.
+This starts both the API server and dashboard. Open **http://localhost:3210** in your browser.
 
-If this is your first time, the wizard will walk you through installing the extension, syncing your posts, and setting up your writing profile.
+If this is your first time, the onboarding wizard will appear and walk you through the rest — installing the extension, syncing posts, and setting up your writing profile.
 
-### 4. Install the Chrome extension
+### 5. Install the Chrome extension
 
 The onboarding wizard gives you step-by-step instructions, but here's the summary:
 
 1. Open Chrome and go to `chrome://extensions/`
 2. Enable **Developer mode** (toggle in top-right)
 3. Click **Load unpacked**
-4. Select the `extension/` folder in your ReachLab directory
+4. Select the `extension/dist/` folder inside your ReachLab directory:
+   - **Mac/Linux:** `~/path/to/reachlab/extension/dist/`
+   - **Windows:** `C:\Users\YourName\path\to\reachlab\extension\dist\`
 5. Pin the extension to your toolbar
 
-### 5. Sync your LinkedIn posts
+### 6. Sync your LinkedIn posts
 
 1. Make sure the server is running (`pnpm dev`)
-2. Navigate to your LinkedIn analytics: **linkedin.com** → **Me** → **Analytics** → or go directly to `linkedin.com/analytics/creator/content/`
+2. Navigate to your LinkedIn analytics: go to `linkedin.com/analytics/creator/content/`
 3. The extension automatically detects the page and begins scraping
 4. The first sync may take a minute as it walks through your posts. Subsequent syncs run automatically every 24 hours.
 
-### 6. Run AI analysis
+### 7. Run AI analysis
 
 After syncing, go to the **Coach** tab and click **Refresh AI**. This discovers your content taxonomy, classifies posts by topic, identifies engagement patterns, and generates recommendations.
 
 ## Production
 
-For production use (no hot-reload, optimized build):
-
 ```bash
-pnpm build        # Builds dashboard + extension
-pnpm start         # Starts server on port 3210
+pnpm build:dashboard    # Build optimized frontend
+pnpm build:extension    # Build extension (if not already done)
+pnpm start              # Start server on port 3210 (serves built dashboard)
 ```
 
-Or use the convenience script:
+Or on Mac/Linux:
 ```bash
 ./start.sh
 ```
 
 ## Video Transcription (Optional)
 
-Video posts are automatically transcribed using local whisper.cpp — no external API calls, no data leaving your machine. The extension captures LinkedIn's DASH streaming URLs via network interception, and the server downloads and transcribes locally.
+Video posts are automatically transcribed using local whisper.cpp — no external API calls, no data leaving your machine.
 
-Setup:
+**macOS:**
 ```bash
 brew install ffmpeg whisper-cpp
 ```
+
+**Linux:**
+```bash
+# Install ffmpeg from your package manager, then build whisper.cpp from source:
+# https://github.com/ggerganov/whisper.cpp
+```
+
+**Windows:**
+Download [ffmpeg](https://www.gyan.dev/ffmpeg/builds/) and add it to your PATH. Download whisper.cpp from [GitHub releases](https://github.com/ggerganov/whisper.cpp/releases).
 
 Download the whisper model (~148MB, one-time):
 ```bash
@@ -190,6 +212,7 @@ REACHLAB_DB=/tmp/test.db pnpm dev
 │   │   ├── background/  # Service worker with sync orchestration
 │   │   ├── content/     # DOM scraper for LinkedIn analytics
 │   │   └── popup/       # Extension popup UI
+│   ├── dist/         # Built extension (load this in Chrome)
 │   └── manifest.json
 ├── data/             # SQLite database + models (gitignored)
 └── docs/             # Design specs and plans
