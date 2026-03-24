@@ -263,96 +263,101 @@ async function syncCompanyPersona(persona: SyncPersona) {
   }
   const companyId = companyMatch[1];
 
-  const tab = await chrome.tabs.create({
-    active: false,
-    url: `https://www.linkedin.com/company/${companyId}/admin/analytics/updates`,
-  });
+  let tabId: number | undefined;
 
-  if (!tab.id) { await advanceToNextPersona(); return; }
-
-  await chrome.storage.session.set({ syncTabId: tab.id });
-  await waitForTabLoad(tab.id);
-
-  // Check if we were redirected (user is not a page admin)
-  const currentTab = await chrome.tabs.get(tab.id);
-  if (!currentTab.url?.includes(`/company/${companyId}/admin/`)) {
-    console.warn(`Skipping persona ${persona.name}: not a page admin (redirected to ${currentTab.url})`);
-    await chrome.tabs.remove(tab.id);
-    await advanceToNextPersona();
-    return;
-  }
-
-  await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
-
-  // Scrape analytics page — handle pagination
-  let allAnalyticsData: ScrapedCompanyPost[] = [];
-  let hasMorePages = true;
-
-  while (hasMorePages) {
-    const analyticsResult = await sendScrapeCommand(tab.id);
-    if (analyticsResult.type === "company-analytics") {
-      allAnalyticsData.push(...analyticsResult.data);
-    }
-
-    const paginationCheck = await chrome.tabs.sendMessage(tab.id, { type: "check-pagination" });
-    hasMorePages = paginationCheck?.hasMore === true;
-
-    if (hasMorePages) {
-      await chrome.tabs.sendMessage(tab.id, { type: "click-next-page" });
-      await waitForTabLoad(tab.id);
-      await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
-    }
-  }
-
-  if (allAnalyticsData.length > 0) {
-    await postToServer({
-      posts: allAnalyticsData.map((p) => ({
-        id: p.id,
-        content_preview: p.content_preview,
-        content_type: p.content_type,
-        published_at: p.published_at,
-        url: p.url,
-      })),
-      post_metrics: allAnalyticsData.map((p) => ({
-        post_id: p.id,
-        impressions: p.impressions,
-        reactions: p.reactions,
-        comments: p.comments,
-        reposts: p.reposts,
-        clicks: p.clicks,
-        click_through_rate: p.click_through_rate,
-        follows: p.follows,
-        engagement_rate: p.engagement_rate,
-      })),
-    });
-  }
-
-  // Navigate to page posts for content
-  await chrome.tabs.update(tab.id, {
-    url: `https://www.linkedin.com/company/${companyId}/admin/page-posts/published`,
-  });
-  await waitForTabLoad(tab.id);
-  await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
-
-  const postsResult = await sendScrapeCommand(tab.id);
-  if (postsResult.type === "company-posts") {
-    await postToServer({
-      post_content: postsResult.data,
-    });
-  }
-
-  await chrome.tabs.remove(tab.id);
-
-  // Update per-persona sync state
   try {
-    await fetch(`${SERVER_URL}/api/personas/${persona.id}/sync-state`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ last_sync_at: Date.now() }),
+    const tab = await chrome.tabs.create({
+      active: false,
+      url: `https://www.linkedin.com/company/${companyId}/admin/analytics/updates`,
     });
-  } catch {}
 
-  await advanceToNextPersona();
+    if (!tab.id) { await advanceToNextPersona(); return; }
+    tabId = tab.id;
+
+    await chrome.storage.session.set({ syncTabId: tabId });
+    await waitForTabLoad(tabId);
+
+    // Check if we were redirected (user is not a page admin)
+    const currentTab = await chrome.tabs.get(tabId);
+    if (!currentTab.url?.includes(`/company/${companyId}/admin/`)) {
+      console.warn(`Skipping persona ${persona.name}: not a page admin (redirected to ${currentTab.url})`);
+      await chrome.tabs.remove(tabId);
+      await advanceToNextPersona();
+      return;
+    }
+
+    await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
+
+    // Scrape analytics page — handle pagination
+    let allAnalyticsData: ScrapedCompanyPost[] = [];
+    let hasMorePages = true;
+
+    while (hasMorePages) {
+      const analyticsResult = await sendScrapeCommand(tabId);
+      if (analyticsResult.type === "company-analytics") {
+        allAnalyticsData.push(...analyticsResult.data);
+      }
+
+      const paginationCheck = await chrome.tabs.sendMessage(tabId, { type: "check-pagination" });
+      hasMorePages = paginationCheck?.hasMore === true;
+
+      if (hasMorePages) {
+        await chrome.tabs.sendMessage(tabId, { type: "click-next-page" });
+        await waitForTabLoad(tabId);
+        await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
+      }
+    }
+
+    if (allAnalyticsData.length > 0) {
+      await postToServer({
+        posts: allAnalyticsData.map((p) => ({
+          id: p.id,
+          content_preview: p.content_preview,
+          content_type: p.content_type,
+          published_at: p.published_at,
+          url: p.url,
+        })),
+        post_metrics: allAnalyticsData.map((p) => ({
+          post_id: p.id,
+          impressions: p.impressions,
+          reactions: p.reactions,
+          comments: p.comments,
+          reposts: p.reposts,
+          clicks: p.clicks,
+          click_through_rate: p.click_through_rate,
+          follows: p.follows,
+          engagement_rate: p.engagement_rate,
+        })),
+      });
+    }
+
+    // Navigate to page posts for content
+    await chrome.tabs.update(tabId, {
+      url: `https://www.linkedin.com/company/${companyId}/admin/page-posts/published`,
+    });
+    await waitForTabLoad(tabId);
+    await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
+
+    const postsResult = await sendScrapeCommand(tabId);
+    if (postsResult.type === "company-posts") {
+      await postToServer({
+        post_content: postsResult.data,
+      });
+    }
+
+    await chrome.tabs.remove(tabId);
+
+    // Update per-persona sync state
+    await finishPersonaSync(persona.id);
+    await advanceToNextPersona();
+  } catch (err: any) {
+    console.error(`[ReachLab] Company sync failed for ${persona.name}:`, err.message);
+    if (tabId) {
+      try { await chrome.tabs.remove(tabId); } catch {}
+    }
+    // Skip this persona and continue with the next
+    await advanceToNextPersona();
+  }
 }
 
 async function syncPersonalPersona(persona: SyncPersona) {
@@ -866,8 +871,8 @@ async function continueBackfill() {
 }
 
 async function finishSync() {
-  const { syncTabId, syncActivePersonaId } = await chrome.storage.session.get([
-    "syncTabId", "syncActivePersonaId",
+  const { syncTabId, syncActivePersonaId, syncPersonas } = await chrome.storage.session.get([
+    "syncTabId", "syncActivePersonaId", "syncPersonas",
   ]);
   if (syncTabId) {
     try {
@@ -875,22 +880,25 @@ async function finishSync() {
     } catch {}
   }
 
-  const personaId = syncActivePersonaId ?? 1;
-
-  // Check for posts needing content or image backfill (per-persona)
+  // Check for posts needing content or image backfill (all personas)
+  const personas: SyncPersona[] = syncPersonas ?? [{ id: syncActivePersonaId ?? 1, name: "Default", linkedin_url: "", type: "personal" as const }];
   try {
-    const [contentRes, imagesRes, videoRes] = await Promise.all([
-      fetch(`${SERVER_URL}/api/personas/${personaId}/posts/needs-content`),
-      fetch(`${SERVER_URL}/api/personas/${personaId}/posts/needs-images`),
-      fetch(`${SERVER_URL}/api/personas/${personaId}/posts/needs-video-url`),
-    ]);
-    const contentIds = contentRes.ok ? (await contentRes.json()).post_ids : [];
-    const imageIds = imagesRes.ok ? (await imagesRes.json()).post_ids : [];
-    const videoIds = videoRes.ok ? (await videoRes.json()).post_ids : [];
-    const allIds = [...new Set([...contentIds, ...imageIds, ...videoIds])];
-    if (allIds.length > 0) {
+    const allIds: string[] = [];
+    for (const p of personas) {
+      const [contentRes, imagesRes, videoRes] = await Promise.all([
+        fetch(`${SERVER_URL}/api/personas/${p.id}/posts/needs-content`),
+        fetch(`${SERVER_URL}/api/personas/${p.id}/posts/needs-images`),
+        fetch(`${SERVER_URL}/api/personas/${p.id}/posts/needs-video-url`),
+      ]);
+      const contentIds = contentRes.ok ? (await contentRes.json()).post_ids : [];
+      const imageIds = imagesRes.ok ? (await imagesRes.json()).post_ids : [];
+      const videoIds = videoRes.ok ? (await videoRes.json()).post_ids : [];
+      allIds.push(...contentIds, ...imageIds, ...videoIds);
+    }
+    const uniqueIds = [...new Set(allIds)];
+    if (uniqueIds.length > 0) {
       await chrome.storage.session.set({
-        backfillQueue: allIds,
+        backfillQueue: uniqueIds,
         backfillCursor: 0,
       });
       chrome.alarms.create("backfill-continue", { delayInMinutes: 0.1 });
@@ -923,6 +931,9 @@ async function finishSyncWithError(error: string) {
     syncInProgress: false,
     syncTabId: null,
     syncError: error,
+    syncPersonas: null,
+    syncPersonaIndex: null,
+    syncActivePersonaId: null,
   });
 }
 
