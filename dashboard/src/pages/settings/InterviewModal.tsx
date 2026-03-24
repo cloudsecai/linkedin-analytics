@@ -21,8 +21,13 @@ export default function InterviewModal({ onClose, onComplete }: InterviewModalPr
   };
 
   const handleStart = async () => {
-    await start();
-    setPhase("active");
+    setExtractError(null);
+    try {
+      await start();
+      setPhase("active");
+    } catch (err: any) {
+      setExtractError(err.message ?? "Failed to start interview");
+    }
   };
 
   const handleStop = async () => {

@@ -109,7 +109,7 @@ export function useRealtimeInterview(): UseRealtimeInterviewReturn {
       await pc.setLocalDescription(offer);
 
       // Connect to OpenAI Realtime
-      const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
+      const sdpResponse = await fetch(`https://api.openai.com/v1/realtime/calls?model=${session.model ?? "gpt-realtime"}`, {
         method: "POST",
         body: offer.sdp,
         headers: {
@@ -134,7 +134,7 @@ export function useRealtimeInterview(): UseRealtimeInterviewReturn {
       setStatus("active");
 
       // Send session update to enable input audio transcription
-      dc.onopen = () => {
+      const sendSessionUpdate = () => {
         dc.send(JSON.stringify({
           type: "session.update",
           session: {
@@ -143,6 +143,21 @@ export function useRealtimeInterview(): UseRealtimeInterviewReturn {
             },
           },
         }));
+      };
+
+      if (dc.readyState === "open") {
+        sendSessionUpdate();
+      } else {
+        dc.onopen = sendSessionUpdate;
+      }
+
+      // Monitor connection state
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+          setError("Voice connection lost. Please try again.");
+          setStatus("error");
+          cleanup();
+        }
       };
     } catch (err: any) {
       setError(err.message ?? "Failed to start interview");
