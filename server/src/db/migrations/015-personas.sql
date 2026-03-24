@@ -101,7 +101,7 @@ ALTER TABLE author_profile_new RENAME TO author_profile;
 -- Add persona_id to profile_interviews
 ALTER TABLE profile_interviews ADD COLUMN persona_id INTEGER NOT NULL DEFAULT 1;
 
--- Add persona_id to writing_prompt_history (if table exists)
+-- Add persona_id to writing_prompt_history
 ALTER TABLE writing_prompt_history ADD COLUMN persona_id INTEGER NOT NULL DEFAULT 1;
 
 -- Per-persona sync state: each persona tracks its own last sync timestamp
