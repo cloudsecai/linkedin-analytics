@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../../api/client";
 import { useRealtimeInterview, type InterviewStatus } from "../../hooks/useRealtimeInterview";
 
@@ -13,6 +13,16 @@ export default function InterviewModal({ onClose, onComplete }: InterviewModalPr
   const [extractedText, setExtractedText] = useState("");
   const [extractedJson, setExtractedJson] = useState<Record<string, any>>({});
   const [extractError, setExtractError] = useState<string | null>(null);
+
+  // Stop interview and mic when modal unmounts
+  useEffect(() => {
+    return () => { stop(); };
+  }, [stop]);
+
+  const handleClose = () => {
+    stop();
+    onClose();
+  };
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -75,7 +85,7 @@ export default function InterviewModal({ onClose, onComplete }: InterviewModalPr
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="text-lg font-semibold text-text-primary">Profile Interview</h2>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-xl">&times;</button>
+          <button onClick={handleClose} className="text-text-muted hover:text-text-primary text-xl">&times;</button>
         </div>
 
         <div className="p-5">

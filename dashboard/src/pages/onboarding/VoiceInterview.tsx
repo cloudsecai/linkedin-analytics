@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../../api/client";
 import { useRealtimeInterview } from "../../hooks/useRealtimeInterview";
 
@@ -13,6 +13,11 @@ export default function VoiceInterview({ onNext, onSkip }: VoiceInterviewProps) 
   const [extractedText, setExtractedText] = useState("");
   const [extractError, setExtractError] = useState<string | null>(null);
   const [noApiKey, setNoApiKey] = useState(false);
+
+  // Stop interview and mic if component unmounts (e.g. user skips mid-interview)
+  useEffect(() => {
+    return () => { stop(); };
+  }, [stop]);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
