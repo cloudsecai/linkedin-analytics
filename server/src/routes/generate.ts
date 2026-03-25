@@ -12,14 +12,6 @@ import {
   replaceAllRules,
   seedDefaultRules,
   getActiveCoachingInsights,
-  insertCoachingSync,
-  completeCoachingSync,
-  insertCoachingChangeLog,
-  updateCoachingChangeDecision,
-  getCoachingChangeLog,
-  getCoachingSyncHistory,
-  insertCoachingInsight,
-  updateCoachingInsight,
   insertTopicLog,
   getAntiAiTropesEnabled,
   insertGenerationMessage,
@@ -32,35 +24,25 @@ import {
   getRetroResult,
   getPendingRetros,
   markRetroApplied,
-  getCoachingChange,
   type Story,
   type Draft,
 } from "../db/generate-queries.js";
-import { createRun, completeRun, failRun, getRunCost, getSetting, upsertSetting } from "../db/ai-queries.js";
+import { createRun, completeRun, failRun, getRunCost, getSetting } from "../db/ai-queries.js";
 import { createClient, MODELS } from "../ai/client.js";
 import { AiLogger } from "../ai/logger.js";
 import { researchStories } from "../ai/researcher.js";
 import { generateDrafts } from "../ai/drafter.js";
 import { combineDrafts } from "../ai/combiner.js";
 import { coachCheck } from "../ai/coach-check.js";
-import { analyzeCoaching } from "../ai/coaching-analyzer.js";
-import { discoverTopics } from "../ai/discovery.js";
 import { analyzeRetro } from "../ai/retro.js";
-import { discoverFeeds, discoverFeedsByGuessing } from "../ai/feed-discoverer.js";
-import { listSources, sourceExists, insertSource, getSource, updateSource, deleteSource, getTaxonomyNames } from "../db/source-queries.js";
+import { registerCoachingRoutes } from "./generate-coaching.js";
+import { registerSourceRoutes } from "./generate-sources.js";
+import { getPersonaId } from "../utils.js";
 
 function getClient(): Anthropic {
   const apiKey = process.env.TRUSTMIND_LLM_API_KEY;
   if (!apiKey) throw new Error("TRUSTMIND_LLM_API_KEY is required");
   return createClient(apiKey);
-}
-
-function getPersonaId(request: any): number {
-  const params = request.params as any;
-  if (params.personaId) return Number(params.personaId);
-  const query = request.query as any;
-  if (query.personaId) return Number(query.personaId);
-  return 1;
 }
 
 export function registerGenerateRoutes(app: FastifyInstance, db: Database.Database): void {
@@ -667,216 +649,9 @@ Return JSON only:
     return { ok: true };
   });
 
-  // ── Coaching Sync ────────────────────────────────────────
+  // ── Coaching routes (extracted) ────────────────────────────
+  registerCoachingRoutes(app, db);
 
-  app.post("/api/generate/coaching/analyze", async (request, reply) => {
-    const personaId = getPersonaId(request);
-    const client = getClient();
-    const runId = createRun(db, personaId, "coaching_analyze", 0);
-    const logger = new AiLogger(db, runId);
-
-    try {
-      const result = await analyzeCoaching(client, db, personaId, logger);
-
-      const syncId = insertCoachingSync(db, personaId, JSON.stringify(result.changes));
-
-      // Create change log entries
-      const changes = result.changes.map((change) => {
-        const changeId = insertCoachingChangeLog(db, {
-          sync_id: syncId,
-          insight_id: change.insight_id,
-          change_type: change.type,
-          old_text: change.old_text,
-          new_text: change.new_text,
-          evidence: change.evidence,
-        });
-        return { id: changeId, ...change };
-      });
-
-      completeRun(db, runId, getRunCost(db, runId));
-
-      return { sync_id: syncId, changes };
-    } catch (err: any) {
-      failRun(db, runId, err.message);
-      return reply.status(500).send({ error: err.message });
-    }
-  });
-
-  app.patch("/api/generate/coaching/changes/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const { action, edited_text } = request.body as {
-      action: "accept" | "skip" | "retire" | "keep";
-      edited_text?: string;
-    };
-
-    const changeId = Number(id);
-
-    // Get the change record
-    const change = getCoachingChange(db, changeId);
-    if (!change) {
-      return reply.status(404).send({ error: "Change not found" });
-    }
-
-    const personaId = getPersonaId(request);
-
-    // Apply the decision
-    if (action === "accept") {
-      if (change.change_type === "new") {
-        insertCoachingInsight(db, personaId, {
-          title: change.new_text?.substring(0, 50) ?? "New insight",
-          prompt_text: edited_text ?? change.new_text ?? "",
-          evidence: change.evidence,
-          source_sync_id: change.sync_id,
-        });
-      } else if (change.change_type === "updated" && change.insight_id) {
-        updateCoachingInsight(db, change.insight_id, {
-          prompt_text: edited_text ?? change.new_text ?? "",
-        });
-      }
-    } else if (action === "retire" && change.insight_id) {
-      updateCoachingInsight(db, change.insight_id, {
-        status: "retired",
-        retired_at: new Date().toISOString(),
-      });
-    }
-
-    updateCoachingChangeDecision(db, changeId, action);
-
-    // Check if all changes in this sync have been decided — if so, complete the sync
-    const allChanges = getCoachingChangeLog(db, change.sync_id);
-    const allDecided = allChanges.every((c) => c.decision !== null);
-    if (allDecided) {
-      const accepted = allChanges.filter((c) => c.decision === "accept" || c.decision === "retire").length;
-      const skipped = allChanges.filter((c) => c.decision === "skip" || c.decision === "keep").length;
-      completeCoachingSync(db, change.sync_id, JSON.stringify(allChanges.map((c) => ({ id: c.id, decision: c.decision }))), accepted, skipped);
-    }
-
-    return { ok: true };
-  });
-
-  app.get("/api/generate/coaching/history", async (request) => {
-    const personaId = getPersonaId(request);
-    const syncs = getCoachingSyncHistory(db, personaId);
-    return { syncs };
-  });
-
-  app.get("/api/generate/coaching/insights", async (request) => {
-    const personaId = getPersonaId(request);
-    const insights = getActiveCoachingInsights(db, personaId);
-    return { insights };
-  });
-
-  // ── Discovery ──────────────────────────────────────────────
-
-  app.post("/api/generate/discover", async (request, reply) => {
-    const personaId = getPersonaId(request);
-    const client = getClient();
-    const runId = createRun(db, personaId, "generate_discover", 0);
-    const logger = new AiLogger(db, runId);
-
-    try {
-      // Pass previously discovered topics so the LLM avoids repeating them
-      const prevRaw = getSetting(db, "last_discovery_labels");
-      const previousLabels = prevRaw ? JSON.parse(prevRaw) as string[] : [];
-
-      const result = await discoverTopics(client, db, logger, previousLabels);
-
-      // Store this round's labels for next time
-      const allLabels = result.categories.flatMap(c => c.topics.map(t => t.label));
-      upsertSetting(db, "last_discovery_labels", JSON.stringify(allLabels));
-
-      completeRun(db, runId, getRunCost(db, runId));
-
-      return result;
-    } catch (err: any) {
-      failRun(db, runId, err.message);
-      return reply.status(500).send({ error: err.message });
-    }
-  });
-
-  // ── Sources management ─────────────────────────────────
-
-  app.get("/api/sources", async (request) => {
-    const personaId = getPersonaId(request);
-    return { sources: listSources(db, personaId) };
-  });
-
-  app.post("/api/sources", async (request, reply) => {
-    const personaId = getPersonaId(request);
-    const { url } = request.body as { url: string };
-    if (!url || typeof url !== "string" || !url.trim()) {
-      return reply.status(400).send({ error: "url is required" });
-    }
-
-    // Auto-discover feeds from the URL
-    let feeds = await discoverFeeds(url.trim());
-    if (feeds.length === 0) {
-      feeds = await discoverFeedsByGuessing(url.trim());
-    }
-    if (feeds.length === 0) {
-      return reply.status(404).send({ error: "No feed found at that URL. Try a blog, newsletter, or news site." });
-    }
-
-    // Use the first discovered feed
-    const feed = feeds[0];
-
-    // Check for duplicate within this persona
-    if (sourceExists(db, feed.feed_url, personaId)) {
-      return reply.status(409).send({ error: "This source is already added." });
-    }
-
-    const sourceId = insertSource(db, feed.title, feed.feed_url, personaId);
-
-    return {
-      source: {
-        id: sourceId,
-        name: feed.title,
-        feed_url: feed.feed_url,
-        enabled: 1,
-      },
-    };
-  });
-
-  app.patch("/api/sources/:id", async (request, reply) => {
-    const personaId = getPersonaId(request);
-    const { id } = request.params as { id: string };
-    const { enabled, name } = request.body as { enabled?: boolean; name?: string };
-
-    if (!getSource(db, Number(id), personaId)) {
-      return reply.status(404).send({ error: "Source not found" });
-    }
-
-    updateSource(db, Number(id), personaId, { enabled, name });
-
-    return { ok: true };
-  });
-
-  app.delete("/api/sources/:id", async (request, reply) => {
-    const personaId = getPersonaId(request);
-    const { id } = request.params as { id: string };
-    if (!deleteSource(db, Number(id), personaId)) {
-      return reply.status(404).send({ error: "Source not found" });
-    }
-    return { ok: true };
-  });
-
-  // ── Source Discovery ─────────────────────────────────────
-
-  app.post("/api/sources/discover", async (request) => {
-    const { topics } = request.body as { topics?: string[] };
-
-    // Fall back to taxonomy topics if none provided
-    let topicList = topics;
-    if (!topicList || topicList.length === 0) {
-      topicList = getTaxonomyNames(db);
-    }
-
-    if (topicList.length === 0) {
-      return { sources: [] };
-    }
-
-    const { discoverSources } = await import("../ai/source-discoverer.js");
-    const sources = await discoverSources(topicList);
-    return { sources };
-  });
+  // ── Source & discovery routes (extracted) ──────────────────
+  registerSourceRoutes(app, db);
 }

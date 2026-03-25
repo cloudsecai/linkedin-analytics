@@ -10,14 +10,7 @@ import {
   getWritingPromptHistory,
   clearPromptSuggestions,
 } from "../db/ai-queries.js";
-
-function getPersonaId(request: any): number {
-  const params = request.params as any;
-  if (params.personaId) return Number(params.personaId);
-  const query = request.query as any;
-  if (query.personaId) return Number(query.personaId);
-  return 1;
-}
+import { getPersonaId } from "../utils.js";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png"]);

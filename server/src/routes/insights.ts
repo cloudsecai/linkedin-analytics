@@ -34,14 +34,7 @@ import {
 } from "../db/ai-queries.js";
 import { createClient } from "../ai/client.js";
 import { runPipeline } from "../ai/orchestrator.js";
-
-function getPersonaId(request: any): number {
-  const params = request.params as any;
-  if (params.personaId) return Number(params.personaId);
-  const query = request.query as any;
-  if (query.personaId) return Number(query.personaId);
-  return 1;
-}
+import { getPersonaId } from "../utils.js";
 
 export function registerInsightsRoutes(app: FastifyInstance, db: Database.Database): void {
   // Backfill costs for existing runs (runs once, idempotent)

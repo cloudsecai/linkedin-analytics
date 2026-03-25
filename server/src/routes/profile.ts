@@ -7,14 +7,7 @@ import {
   getProfileInterviews,
   incrementInterviewCount,
 } from "../db/profile-queries.js";
-
-function getPersonaId(request: any): number {
-  const params = request.params as any;
-  if (params.personaId) return Number(params.personaId);
-  const query = request.query as any;
-  if (query.personaId) return Number(query.personaId);
-  return 1;
-}
+import { getPersonaId } from "../utils.js";
 
 export function registerProfileRoutes(app: FastifyInstance, db: Database.Database): void {
   // Get current profile
