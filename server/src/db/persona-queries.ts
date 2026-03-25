@@ -20,33 +20,33 @@ export function createPersona(
   db: Database.Database,
   data: { name: string; linkedin_url: string; type: "personal" | "company_page" }
 ): Persona {
-  const result = db.prepare(
-    "INSERT INTO personas (name, linkedin_url, type) VALUES (?, ?, ?)"
-  ).run(data.name, data.linkedin_url, data.type);
-  const personaId = result.lastInsertRowid as number;
+  return db.transaction(() => {
+    const result = db.prepare(
+      "INSERT INTO personas (name, linkedin_url, type) VALUES (?, ?, ?)"
+    ).run(data.name, data.linkedin_url, data.type);
+    const personaId = result.lastInsertRowid as number;
 
-  // Seed new persona with an empty author_profile row so profile queries don't fail
-  db.prepare(
-    "INSERT OR IGNORE INTO author_profile (persona_id) VALUES (?)"
-  ).run(personaId);
+    // Seed new persona with an empty author_profile row so profile queries don't fail
+    db.prepare(
+      "INSERT OR IGNORE INTO author_profile (persona_id) VALUES (?)"
+    ).run(personaId);
 
-  // Copy default RSS sources from persona 1 so the research pipeline works immediately
-  // Actual columns: name, feed_url, source_type, enabled (from 011-research-sources.sql)
-  db.prepare(`
-    INSERT INTO research_sources (name, feed_url, source_type, enabled, persona_id)
-    SELECT name, feed_url, source_type, enabled, ?
-    FROM research_sources WHERE persona_id = 1
-  `).run(personaId);
+    // Copy default RSS sources from persona 1 so the research pipeline works immediately
+    db.prepare(`
+      INSERT INTO research_sources (name, feed_url, source_type, enabled, persona_id)
+      SELECT name, feed_url, source_type, enabled, ?
+      FROM research_sources WHERE persona_id = 1
+    `).run(personaId);
 
-  // Copy generation rules from persona 1
-  // Actual columns: category, rule_text, example_text, sort_order, enabled (from 009-generation.sql)
-  db.prepare(`
-    INSERT INTO generation_rules (category, rule_text, example_text, sort_order, enabled, persona_id)
-    SELECT category, rule_text, example_text, sort_order, enabled, ?
-    FROM generation_rules WHERE persona_id = 1
-  `).run(personaId);
+    // Copy generation rules from persona 1
+    db.prepare(`
+      INSERT INTO generation_rules (category, rule_text, example_text, sort_order, enabled, persona_id)
+      SELECT category, rule_text, example_text, sort_order, enabled, ?
+      FROM generation_rules WHERE persona_id = 1
+    `).run(personaId);
 
-  return getPersona(db, personaId)!;
+    return getPersona(db, personaId)!;
+  })();
 }
 
 export function updatePersona(

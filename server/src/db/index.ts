@@ -63,7 +63,9 @@ export function runMigrations(db: Database.Database): void {
     if (isNaN(version) || version <= currentVersion.v) continue;
 
     const sql = fs.readFileSync(path.join(migrationsDir, file), "utf-8");
-    db.exec(sql);
-    db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);
+    db.transaction(() => {
+      db.exec(sql);
+      db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(version);
+    })();
   }
 }
