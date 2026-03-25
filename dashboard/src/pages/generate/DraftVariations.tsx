@@ -115,6 +115,12 @@ export default function DraftVariations({ gen, setGen, loading, setLoading, onBa
             onChange={(e) =>
               setGen((prev: any) => ({ ...prev, combiningGuidance: e.target.value }))
             }
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleCombineAndReview();
+              }
+            }}
             placeholder="e.g. Lead with the contrarian hook, use the operator's examples, close with the future angle..."
             className="w-full bg-gen-bg-2 border border-gen-border-2 rounded-lg px-4 py-3 text-[14px] text-gen-text-1 placeholder:text-gen-text-3 resize-none h-20 focus:outline-none focus:border-gen-accent-border"
           />
