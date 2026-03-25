@@ -583,3 +583,85 @@ export function getGenerationMessages(
     )
     .all(generationId, limit) as GenerationMessage[];
 }
+
+// ── Rule helpers ────────────────────────────────────────
+
+export function getMaxRuleSortOrder(db: Database.Database, category: string, personaId: number): number {
+  const row = db.prepare(
+    "SELECT COALESCE(MAX(sort_order), -1) as m FROM generation_rules WHERE category = ? AND persona_id = ?"
+  ).get(category, personaId) as { m: number };
+  return row.m;
+}
+
+export function insertSingleRule(
+  db: Database.Database,
+  personaId: number,
+  category: string,
+  ruleText: string,
+  sortOrder: number
+): void {
+  db.prepare(
+    "INSERT INTO generation_rules (category, rule_text, sort_order, enabled, persona_id) VALUES (?, ?, ?, 1, ?)"
+  ).run(category, ruleText, sortOrder, personaId);
+}
+
+export function getRuleCount(db: Database.Database, personaId: number): number {
+  return (db.prepare("SELECT COUNT(*) as count FROM generation_rules WHERE persona_id = ?").get(personaId) as any).count;
+}
+
+// ── Retro helpers ───────────────────────────────────────
+
+export function startRetro(db: Database.Database, generationId: number, publishedText: string): void {
+  db.prepare(
+    "UPDATE generations SET published_text = ?, retro_json = NULL, retro_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(publishedText, generationId);
+}
+
+export function completeRetro(db: Database.Database, generationId: number, retroJson: string): void {
+  db.prepare(
+    "UPDATE generations SET retro_json = ?, retro_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(retroJson, generationId);
+}
+
+export function getRetroResult(
+  db: Database.Database,
+  generationId: number
+): { published_text: string | null; retro_json: string | null; retro_at: string | null } | undefined {
+  return db.prepare(
+    "SELECT published_text, retro_json, retro_at FROM generations WHERE id = ?"
+  ).get(generationId) as any;
+}
+
+export function getPendingRetros(db: Database.Database, personaId: number): Array<{
+  id: number;
+  final_draft: string;
+  published_text: string;
+  retro_json: string;
+  retro_at: string;
+  matched_post_id: string | null;
+}> {
+  return db
+    .prepare(
+      `SELECT id, final_draft, published_text, retro_json, retro_at, matched_post_id
+       FROM generations
+       WHERE persona_id = ?
+         AND retro_json IS NOT NULL
+         AND retro_at IS NOT NULL
+         AND retro_applied_at IS NULL
+       ORDER BY retro_at DESC
+       LIMIT 10`
+    )
+    .all(personaId) as any[];
+}
+
+export function markRetroApplied(db: Database.Database, generationId: number): void {
+  db.prepare(
+    "UPDATE generations SET retro_applied_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(generationId);
+}
+
+// ── Coaching change lookup ──────────────────────────────
+
+export function getCoachingChange(db: Database.Database, id: number): any | undefined {
+  return db.prepare("SELECT * FROM coaching_change_log WHERE id = ?").get(id);
+}

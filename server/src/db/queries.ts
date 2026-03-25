@@ -463,3 +463,96 @@ export function getPostIdsNeedingMetrics(db: Database.Database, personaId: numbe
      ORDER BY p.published_at DESC`
   ).all(personaId) as { id: string }[]).map(r => r.id);
 }
+
+// ── Post-needs queries (used by ingest and extension endpoints) ──
+
+export function getPostsNeedingContent(db: Database.Database, personaId: number): string[] {
+  return (db.prepare(
+    "SELECT id FROM posts WHERE full_text IS NULL AND persona_id = ? ORDER BY published_at DESC"
+  ).all(personaId) as { id: string }[]).map(r => r.id);
+}
+
+export function getPostsNeedingImages(db: Database.Database, personaId: number): string[] {
+  return (db.prepare(
+    `SELECT id FROM posts
+     WHERE persona_id = ?
+       AND content_type IN ('image', 'carousel')
+       AND (image_local_paths IS NULL OR image_local_paths = '[]')
+       AND (image_urls IS NULL OR image_urls = '[]')
+     ORDER BY published_at DESC`
+  ).all(personaId) as { id: string }[]).map(r => r.id);
+}
+
+export function getPostsNeedingVideoUrl(db: Database.Database, personaId: number): string[] {
+  return (db.prepare(
+    "SELECT id FROM posts WHERE persona_id = ? AND content_type = 'video' AND video_url IS NULL ORDER BY published_at DESC"
+  ).all(personaId) as { id: string }[]).map(r => r.id);
+}
+
+export function getPostsWithRecentMetrics(db: Database.Database, personaId: number): string[] {
+  return (db.prepare(
+    `SELECT DISTINCT pm.post_id FROM post_metrics pm
+     JOIN posts p ON p.id = pm.post_id
+     WHERE pm.scraped_at > datetime('now', '-12 hours')
+       AND p.persona_id = ?`
+  ).all(personaId) as { post_id: string }[]).map(r => r.post_id);
+}
+
+export function getImageLocalPaths(db: Database.Database, postId: string): string | null {
+  const row = db.prepare("SELECT image_local_paths FROM posts WHERE id = ?").get(postId) as { image_local_paths: string | null } | undefined;
+  return row?.image_local_paths ?? null;
+}
+
+export function setImageLocalPaths(db: Database.Database, postId: string, paths: string): void {
+  db.prepare("UPDATE posts SET image_local_paths = ? WHERE id = ?").run(paths, postId);
+}
+
+// ── Sync health queries ─────────────────────────────────
+
+export function getAvgScrapedPostCount(db: Database.Database, personaId: number): number | null {
+  const row = db.prepare(
+    `SELECT AVG(posts_count) as avg_count FROM (
+       SELECT posts_count FROM scrape_log
+       WHERE posts_count > 0 AND persona_id = ?
+       ORDER BY id DESC LIMIT 10
+     )`
+  ).get(personaId) as { avg_count: number | null };
+  return row.avg_count;
+}
+
+export function getPostCountInWindow(db: Database.Database, personaId: number, days: number): number {
+  const row = db.prepare(
+    "SELECT COUNT(*) as count FROM posts WHERE published_at > datetime('now', '-' || ? || ' days') AND persona_id = ?"
+  ).get(days, personaId) as { count: number };
+  return row.count;
+}
+
+export function getTopExamplePosts(db: Database.Database, personaId: number, limit: number): any[] {
+  return db.prepare(
+    `SELECT p.id, p.full_text, p.published_at, p.content_type,
+      m.impressions, m.reactions, m.comments, m.reposts,
+      CASE WHEN m.impressions > 0
+        THEN CAST(COALESCE(m.reactions, 0) + COALESCE(m.comments, 0) + COALESCE(m.reposts, 0) AS REAL) / m.impressions
+        ELSE NULL
+      END AS engagement_rate
+    FROM posts p
+    LEFT JOIN post_metrics m ON m.post_id = p.id
+      AND m.id = (SELECT MAX(id) FROM post_metrics WHERE post_id = p.id)
+    LEFT JOIN ai_tags t ON t.post_id = p.id
+    WHERE p.persona_id = ?
+      AND p.full_text IS NOT NULL
+      AND LENGTH(p.full_text) >= 200
+      AND m.impressions IS NOT NULL
+      AND (t.post_category IS NULL OR t.post_category != 'announcement')
+    ORDER BY m.impressions DESC
+    LIMIT ?`
+  ).all(personaId, limit);
+}
+
+export function getPostsNeedingImageDownload(db: Database.Database): { id: string; image_urls: string }[] {
+  return db.prepare(
+    `SELECT id, image_urls FROM posts
+     WHERE image_urls IS NOT NULL AND image_urls != '[]'
+       AND (image_local_paths IS NULL OR image_local_paths = '[]')`
+  ).all() as { id: string; image_urls: string }[];
+}

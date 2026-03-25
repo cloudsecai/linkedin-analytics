@@ -21,7 +21,18 @@ import {
   queryProfile,
   queryHealth,
   getPostIdsNeedingMetrics,
+  getPostsNeedingImageDownload,
+  getPostsNeedingContent,
+  getPostsNeedingImages,
+  getPostsNeedingVideoUrl,
+  getPostsWithRecentMetrics,
+  getImageLocalPaths,
+  setImageLocalPaths,
+  getAvgScrapedPostCount,
+  getPostCountInWindow,
+  getTopExamplePosts,
 } from "./db/queries.js";
+import { getSetting, upsertSetting, deleteSetting, getLastFullRun } from "./db/ai-queries.js";
 import { ingestPayloadSchema } from "./schemas.js";
 import multipart from "@fastify/multipart";
 import { registerInsightsRoutes } from "./routes/insights.js";
@@ -68,16 +79,14 @@ export function buildApp(dbPath: string) {
     // Sync state — stored server-side so extension reinstalls don't trigger full re-scrape
     app.get(`${prefix}/sync-state`, async (request) => {
       const personaId = getPersonaId(request);
-      const row = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(`last_sync_at:${personaId}`) as { value: string } | undefined;
-      return { last_sync_at: row?.value ? Number(row.value) : null };
+      const value = getSetting(db, `last_sync_at:${personaId}`);
+      return { last_sync_at: value ? Number(value) : null };
     });
 
     app.put(`${prefix}/sync-state`, async (request) => {
       const personaId = getPersonaId(request);
       const body = request.body as { last_sync_at: number };
-      const key = `last_sync_at:${personaId}`;
-      db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP")
-        .run(key, String(body.last_sync_at), String(body.last_sync_at));
+      upsertSetting(db, `last_sync_at:${personaId}`, String(body.last_sync_at));
       return { ok: true };
     });
 
@@ -183,32 +192,21 @@ export function buildApp(dbPath: string) {
       // Sync health check: detect post count anomalies
       // Only check when post_metrics are also present (full sync), not partial content updates
       if (payload.posts && payload.posts.length > 0 && payload.post_metrics && payload.post_metrics.length > 0) {
-        const avgRow = db
-          .prepare(
-            `SELECT AVG(posts_count) as avg_count FROM (
-               SELECT posts_count FROM scrape_log
-               WHERE posts_count > 0 AND persona_id = ?
-               ORDER BY id DESC LIMIT 10
-             )`
-          )
-          .get(personaId) as { avg_count: number | null };
+        const avgCount = getAvgScrapedPostCount(db, personaId);
 
         const syncWarningKey = `sync_warning:${personaId}`;
-        if (avgRow.avg_count && payload.posts.length < avgRow.avg_count * 0.3) {
-          const warning = `Post count anomaly: got ${payload.posts.length}, expected ~${Math.round(avgRow.avg_count)}. LinkedIn may have changed their page structure.`;
+        if (avgCount && payload.posts.length < avgCount * 0.3) {
+          const warning = `Post count anomaly: got ${payload.posts.length}, expected ~${Math.round(avgCount)}. LinkedIn may have changed their page structure.`;
           console.warn(`[Sync Health] ${warning}`);
-          db.prepare(
-            `INSERT INTO settings (key, value) VALUES (?, ?)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
-          ).run(syncWarningKey, JSON.stringify({
+          upsertSetting(db, syncWarningKey, JSON.stringify({
             message: warning,
             detected_at: new Date().toISOString(),
-            expected: Math.round(avgRow.avg_count),
+            expected: Math.round(avgCount),
             actual: payload.posts.length,
           }));
         } else {
           // Clear warning if count looks normal
-          db.prepare("DELETE FROM settings WHERE key = ?").run(syncWarningKey);
+          deleteSetting(db, syncWarningKey);
         }
       }
 
@@ -217,7 +215,7 @@ export function buildApp(dbPath: string) {
         const postsWithDate = payload.posts.filter((p): p is typeof p & { published_at: string } => !!p.published_at);
         const syncStaleWarningKey = `sync_stale_warning:${personaId}`;
         if (postsWithDate.length === 0) {
-          db.prepare("DELETE FROM settings WHERE key = ?").run(syncStaleWarningKey);
+          deleteSetting(db, syncStaleWarningKey);
         } else {
         const newestPost = postsWithDate.reduce((a, b) =>
           new Date(a.published_at) > new Date(b.published_at) ? a : b
@@ -226,27 +224,19 @@ export function buildApp(dbPath: string) {
         const twoDaysMs = 48 * 60 * 60 * 1000;
 
         // Check average posting frequency from DB
-        const freqRow = db
-          .prepare(
-            `SELECT COUNT(*) as count FROM posts
-             WHERE published_at > datetime('now', '-30 days') AND persona_id = ?`
-          )
-          .get(personaId) as { count: number };
+        const recentPostCount = getPostCountInWindow(db, personaId, 30);
 
         // If user posts frequently (>2/week) but newest scraped post is >48h old, warn
-        if (freqRow.count >= 8 && newestAge > twoDaysMs) {
-          const warning = `Stale sync: newest scraped post is ${Math.round(newestAge / 3600000)}h old, but you typically post ${freqRow.count} times/month. A recent post may be missing.`;
+        if (recentPostCount >= 8 && newestAge > twoDaysMs) {
+          const warning = `Stale sync: newest scraped post is ${Math.round(newestAge / 3600000)}h old, but you typically post ${recentPostCount} times/month. A recent post may be missing.`;
           console.warn(`[Sync Health] ${warning}`);
-          db.prepare(
-            `INSERT INTO settings (key, value) VALUES (?, ?)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
-          ).run(syncStaleWarningKey, JSON.stringify({
+          upsertSetting(db, syncStaleWarningKey, JSON.stringify({
             message: warning,
             detected_at: new Date().toISOString(),
             newest_post_age_hours: Math.round(newestAge / 3600000),
           }));
         } else {
-          db.prepare("DELETE FROM settings WHERE key = ?").run(syncStaleWarningKey);
+          deleteSetting(db, syncStaleWarningKey);
         }
         } // end else (postsWithDate.length > 0)
       }
@@ -284,17 +274,11 @@ export function buildApp(dbPath: string) {
             const dataDir = path.join(path.dirname(dbPath), "images");
             for (const post of postsWithImages) {
               // Check if already downloaded
-              const existing = db
-                .prepare("SELECT image_local_paths FROM posts WHERE id = ?")
-                .get(post.id) as { image_local_paths: string | null } | undefined;
-              if (existing?.image_local_paths) continue;
+              if (getImageLocalPaths(db, post.id)) continue;
 
               downloadPostImages(post.id, post.image_urls!, dataDir).then((paths) => {
                 if (paths.length > 0) {
-                  db.prepare("UPDATE posts SET image_local_paths = ? WHERE id = ?").run(
-                    JSON.stringify(paths),
-                    post.id
-                  );
+                  setImageLocalPaths(db, post.id, JSON.stringify(paths));
                 }
               }).catch((err: any) => {
                 console.error(`[Image Download] Failed for ${post.id}:`, err.message);
@@ -338,9 +322,7 @@ export function buildApp(dbPath: string) {
             if (schedule === "off") return;
 
             // Only consider full pipeline runs (not tagging-only)
-            const lastFullRun = db.prepare(
-              "SELECT id, post_count, completed_at FROM ai_runs WHERE status = 'completed' AND triggered_by NOT LIKE '%tagging%' AND persona_id = ? ORDER BY id DESC LIMIT 1"
-            ).get(personaId) as { id: number; post_count: number; completed_at: string } | undefined;
+            const lastFullRun = getLastFullRun(db, personaId);
 
             const newPosts = lastFullRun ? postCount - lastFullRun.post_count : postCount;
             if (newPosts < 1) return; // No new posts, skip
@@ -394,36 +376,10 @@ export function buildApp(dbPath: string) {
     }
 
       // Include posts needing scraping so the extension doesn't need separate API calls
-      const needsContent = payload.posts
-        ? (db.prepare("SELECT id FROM posts WHERE full_text IS NULL AND persona_id = ? ORDER BY published_at DESC").all(personaId) as { id: string }[]).map(r => r.id)
-        : undefined;
-      const needsImages = payload.posts
-        ? (db.prepare(
-            `SELECT id FROM posts
-             WHERE persona_id = ?
-               AND content_type IN ('image', 'carousel')
-               AND (image_local_paths IS NULL OR image_local_paths = '[]')
-               AND (image_urls IS NULL OR image_urls = '[]')
-             ORDER BY published_at DESC`
-          ).all(personaId) as { id: string }[]).map(r => r.id)
-        : undefined;
-      const needsVideoUrl = payload.posts
-        ? (db.prepare(
-            `SELECT id FROM posts
-             WHERE persona_id = ?
-               AND content_type = 'video' AND video_url IS NULL
-             ORDER BY published_at DESC`
-          ).all(personaId) as { id: string }[]).map(r => r.id)
-        : undefined;
-      // Posts that have recent metrics (scraped within last 12 hours)
-      const hasRecentMetrics = payload.posts
-        ? (db.prepare(
-            `SELECT DISTINCT pm.post_id FROM post_metrics pm
-             JOIN posts p ON p.id = pm.post_id
-             WHERE pm.scraped_at > datetime('now', '-12 hours')
-               AND p.persona_id = ?`
-          ).all(personaId) as { post_id: string }[]).map(r => r.post_id)
-        : undefined;
+      const needsContent = payload.posts ? getPostsNeedingContent(db, personaId) : undefined;
+      const needsImages = payload.posts ? getPostsNeedingImages(db, personaId) : undefined;
+      const needsVideoUrl = payload.posts ? getPostsNeedingVideoUrl(db, personaId) : undefined;
+      const hasRecentMetrics = payload.posts ? getPostsWithRecentMetrics(db, personaId) : undefined;
       // Recent posts that have never had metrics scraped (not on top-posts page)
       // Scoped to last 14 days — after that, stats rarely increment
       const needsMetrics = payload.posts
@@ -470,41 +426,19 @@ export function buildApp(dbPath: string) {
     // Posts needing content scraping
     app.get(`${prefix}/posts/needs-content`, async (request) => {
       const personaId = getPersonaId(request);
-      const rows = db
-        .prepare("SELECT id FROM posts WHERE full_text IS NULL AND persona_id = ? ORDER BY published_at DESC")
-        .all(personaId) as { id: string }[];
-      return { post_ids: rows.map((r) => r.id) };
+      return { post_ids: getPostsNeedingContent(db, personaId) };
     });
 
     // Posts needing image scraping (visual content types with no downloaded images AND no URLs yet)
     app.get(`${prefix}/posts/needs-images`, async (request) => {
       const personaId = getPersonaId(request);
-      const rows = db
-        .prepare(
-          `SELECT id FROM posts
-           WHERE persona_id = ?
-             AND content_type IN ('image', 'carousel')
-             AND (image_local_paths IS NULL OR image_local_paths = '[]')
-             AND (image_urls IS NULL OR image_urls = '[]')
-           ORDER BY published_at DESC`
-        )
-        .all(personaId) as { id: string }[];
-      return { post_ids: rows.map((r) => r.id) };
+      return { post_ids: getPostsNeedingImages(db, personaId) };
     });
 
     // Video posts needing video URL scraping
     app.get(`${prefix}/posts/needs-video-url`, async (request) => {
       const personaId = getPersonaId(request);
-      const rows = db
-        .prepare(
-          `SELECT id FROM posts
-           WHERE persona_id = ?
-             AND content_type = 'video'
-             AND video_url IS NULL
-           ORDER BY published_at DESC`
-        )
-        .all(personaId) as { id: string }[];
-      return { post_ids: rows.map((r) => r.id) };
+      return { post_ids: getPostsNeedingVideoUrl(db, personaId) };
     });
 
     // Recent posts that have never had metrics scraped (debugging/future use)
@@ -519,29 +453,7 @@ export function buildApp(dbPath: string) {
       const q = request.query as any;
       const limit = q.limit ? Number(q.limit) : 10;
 
-      const rows = db
-        .prepare(
-          `SELECT p.id, p.full_text, p.published_at, p.content_type,
-            m.impressions, m.reactions, m.comments, m.reposts,
-            CASE WHEN m.impressions > 0
-              THEN CAST(COALESCE(m.reactions, 0) + COALESCE(m.comments, 0) + COALESCE(m.reposts, 0) AS REAL) / m.impressions
-              ELSE NULL
-            END AS engagement_rate
-          FROM posts p
-          LEFT JOIN post_metrics m ON m.post_id = p.id
-            AND m.id = (SELECT MAX(id) FROM post_metrics WHERE post_id = p.id)
-          LEFT JOIN ai_tags t ON t.post_id = p.id
-          WHERE p.persona_id = ?
-            AND p.full_text IS NOT NULL
-            AND LENGTH(p.full_text) >= 200
-            AND m.impressions IS NOT NULL
-            AND (t.post_category IS NULL OR t.post_category != 'announcement')
-          ORDER BY m.impressions DESC
-          LIMIT ?`
-        )
-        .all(personaId, limit) as any[];
-
-      return { posts: rows };
+      return { posts: getTopExamplePosts(db, personaId, limit) };
     });
 
     // Posts
@@ -632,13 +544,7 @@ export function buildApp(dbPath: string) {
 
   // On startup, retry image downloads for posts that have URLs but no local files
   app.addHook("onReady", async () => {
-    const postsNeedingDownload = db
-      .prepare(
-        `SELECT id, image_urls FROM posts
-         WHERE image_urls IS NOT NULL AND image_urls != '[]'
-           AND (image_local_paths IS NULL OR image_local_paths = '[]')`
-      )
-      .all() as { id: string; image_urls: string }[];
+    const postsNeedingDownload = getPostsNeedingImageDownload(db);
 
     if (postsNeedingDownload.length > 0) {
       console.log(`[Image Download] Retrying downloads for ${postsNeedingDownload.length} posts...`);
@@ -648,10 +554,7 @@ export function buildApp(dbPath: string) {
           const urls = JSON.parse(post.image_urls) as string[];
           downloadPostImages(post.id, urls, imagesDir).then((paths) => {
             if (paths.length > 0) {
-              db.prepare("UPDATE posts SET image_local_paths = ? WHERE id = ?").run(
-                JSON.stringify(paths),
-                post.id
-              );
+              setImageLocalPaths(db, post.id, JSON.stringify(paths));
             }
           }).catch((err: any) => {
             console.error(`[Image Download] Retry failed for ${post.id}:`, err.message);

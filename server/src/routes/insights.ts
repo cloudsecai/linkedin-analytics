@@ -21,8 +21,18 @@ import {
   getHookPerformance,
   getImageSubtypePerformance,
   getSetting,
+  getRunCost,
+  getRunsNeedingCostBackfill,
+  backfillRunCost,
+  clearTagsForPersona,
+  getRecommendationById,
+  markRecommendationActedOn,
+  getAiLogsForRun,
+  listCompletedRuns,
+  getTotalCostForPersona,
+  getLastFullRun,
 } from "../db/ai-queries.js";
-import { createClient, calculateCostCents } from "../ai/client.js";
+import { createClient } from "../ai/client.js";
 import { runPipeline } from "../ai/orchestrator.js";
 
 function getPersonaId(request: any): number {
@@ -35,21 +45,12 @@ function getPersonaId(request: any): number {
 
 export function registerInsightsRoutes(app: FastifyInstance, db: Database.Database): void {
   // Backfill costs for existing runs (runs once, idempotent)
-  const runsToBackfill = db
-    .prepare(
-      "SELECT id FROM ai_runs WHERE status = 'completed' AND (total_cost_cents = 0 OR total_cost_cents IS NULL)"
-    )
-    .all() as { id: number }[];
-
+  const runsToBackfill = getRunsNeedingCostBackfill(db);
   if (runsToBackfill.length > 0) {
     for (const run of runsToBackfill) {
-      const logs = db
-        .prepare("SELECT model, input_tokens, output_tokens FROM ai_logs WHERE run_id = ?")
-        .all(run.id) as Array<{ model: string; input_tokens: number; output_tokens: number }>;
-      if (logs.length === 0) continue; // No logs = genuinely free run, skip
-      const cost = calculateCostCents(logs);
-      if (cost > 0) {
-        db.prepare("UPDATE ai_runs SET total_cost_cents = ? WHERE id = ?").run(cost, run.id);
+      const { cost_cents } = getRunCost(db, run.id);
+      if (cost_cents > 0) {
+        backfillRunCost(db, run.id, cost_cents);
       }
     }
     console.log(`[Cost Backfill] Checked ${runsToBackfill.length} runs for missing costs`);
@@ -114,12 +115,7 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
       return reply.status(409).send({ error: "Analysis already running", started_at: running.started_at });
     }
     // Clear tags and topics for this persona's posts only; taxonomy is shared
-    db.prepare(
-      "DELETE FROM ai_post_topics WHERE post_id IN (SELECT id FROM posts WHERE persona_id = ?)"
-    ).run(personaId);
-    db.prepare(
-      "DELETE FROM ai_tags WHERE post_id IN (SELECT id FROM posts WHERE persona_id = ?)"
-    ).run(personaId);
+    clearTagsForPersona(db, personaId);
     const client = createClient(apiKey);
     runPipeline(client, db, personaId, "retag").catch((err) => {
       console.error("[AI Pipeline] Retag failed:", err.message);
@@ -133,8 +129,7 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
     if (!body.feedback && body.acted_on === undefined) {
       return reply.status(400).send({ error: "Provide feedback or acted_on" });
     }
-    const rec = db.prepare("SELECT id FROM recommendations WHERE id = ?").get(Number(id));
-    if (!rec) {
+    if (!getRecommendationById(db, Number(id))) {
       return reply.status(404).send({ error: "Recommendation not found" });
     }
     if (body.feedback) {
@@ -145,15 +140,14 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
       updateRecommendationFeedback(db, Number(id), feedbackStr);
     }
     if (body.acted_on !== undefined) {
-      db.prepare("UPDATE recommendations SET acted_on = ?, acted_on_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .run(body.acted_on ? 1 : 0, Number(id));
+      markRecommendationActedOn(db, Number(id), body.acted_on);
     }
     return { ok: true };
   });
 
   app.get("/api/insights/logs/:runId", async (request) => {
     const { runId } = request.params as { runId: string };
-    return { logs: db.prepare("SELECT * FROM ai_logs WHERE run_id = ? ORDER BY id").all(Number(runId)) };
+    return { logs: getAiLogsForRun(db, Number(runId)) };
   });
 
   app.get("/api/insights/gaps", async (request) => ({
@@ -178,8 +172,7 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
     if (!body.type || !["accepted", "dismissed"].includes(body.type)) {
       return reply.status(400).send({ error: "Provide type: 'accepted' or 'dismissed'" });
     }
-    const rec = db.prepare("SELECT id FROM recommendations WHERE id = ?").get(Number(id));
-    if (!rec) {
+    if (!getRecommendationById(db, Number(id))) {
       return reply.status(404).send({ error: "Recommendation not found" });
     }
     resolveRecommendation(db, Number(id), body.type);
@@ -242,21 +235,8 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
 
   app.get("/api/insights/runs", async (request) => {
     const personaId = getPersonaId(request);
-    const runs = db
-      .prepare(
-        `SELECT id, triggered_by, post_count, status, started_at, completed_at,
-                total_input_tokens, total_output_tokens, total_cost_cents
-         FROM ai_runs
-         WHERE status = 'completed' AND persona_id = ?
-         ORDER BY id DESC LIMIT 20`
-      )
-      .all(personaId);
-    const totalCostCents = db
-      .prepare(
-        "SELECT COALESCE(SUM(total_cost_cents), 0) as total FROM ai_runs WHERE status = 'completed' AND persona_id = ?"
-      )
-      .get(personaId) as { total: number };
-    return { runs, total_cost_cents: totalCostCents.total };
+    const runs = listCompletedRuns(db, personaId);
+    return { runs, total_cost_cents: getTotalCostForPersona(db, personaId) };
   });
 
   // ── Analysis status (for regenerate button + next auto-regen) ──
@@ -264,13 +244,7 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
   app.get("/api/insights/status", async (request) => {
     const personaId = getPersonaId(request);
     const running = getRunningRun(db, personaId);
-    const lastFullRun = db.prepare(
-      `SELECT id, triggered_by, post_count, completed_at
-       FROM ai_runs WHERE status = 'completed'
-         AND triggered_by NOT LIKE '%tagging%'
-         AND persona_id = ?
-       ORDER BY id DESC LIMIT 1`
-    ).get(personaId) as { id: number; triggered_by: string; post_count: number; completed_at: string } | undefined;
+    const lastFullRun = getLastFullRun(db, personaId);
 
     const schedule = getSetting(db, "auto_interpret_schedule") ?? "weekly";
     const postThreshold = parseInt(getSetting(db, "auto_interpret_post_threshold") ?? "5", 10);

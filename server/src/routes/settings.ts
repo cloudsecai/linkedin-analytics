@@ -8,6 +8,7 @@ import {
   upsertSetting,
   saveWritingPromptHistory,
   getWritingPromptHistory,
+  clearPromptSuggestions,
 } from "../db/ai-queries.js";
 
 function getPersonaId(request: any): number {
@@ -162,10 +163,7 @@ export function registerSettingsRoutes(
     });
     // Clear prompt suggestions so applied suggestions don't reappear
     if (source === "ai_suggestion") {
-      db.prepare(
-        `UPDATE ai_overview SET prompt_suggestions_json = NULL
-         WHERE id = (SELECT MAX(id) FROM ai_overview)`
-      ).run();
+      clearPromptSuggestions(db);
     }
     return { ok: true };
   });

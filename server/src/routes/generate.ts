@@ -13,7 +13,6 @@ import {
   seedDefaultRules,
   getActiveCoachingInsights,
   insertCoachingSync,
-  getCoachingSync,
   completeCoachingSync,
   insertCoachingChangeLog,
   updateCoachingChangeDecision,
@@ -25,11 +24,20 @@ import {
   getAntiAiTropesEnabled,
   insertGenerationMessage,
   getGenerationMessages,
+  getRuleCount,
+  getMaxRuleSortOrder,
+  insertSingleRule,
+  startRetro,
+  completeRetro,
+  getRetroResult,
+  getPendingRetros,
+  markRetroApplied,
+  getCoachingChange,
   type Story,
   type Draft,
 } from "../db/generate-queries.js";
-import { createRun, completeRun, failRun } from "../db/ai-queries.js";
-import { createClient, MODELS, calculateCostCents } from "../ai/client.js";
+import { createRun, completeRun, failRun, getRunCost, getSetting, upsertSetting } from "../db/ai-queries.js";
+import { createClient, MODELS } from "../ai/client.js";
 import { AiLogger } from "../ai/logger.js";
 import { researchStories } from "../ai/researcher.js";
 import { generateDrafts } from "../ai/drafter.js";
@@ -39,7 +47,7 @@ import { analyzeCoaching } from "../ai/coaching-analyzer.js";
 import { discoverTopics } from "../ai/discovery.js";
 import { analyzeRetro } from "../ai/retro.js";
 import { discoverFeeds, discoverFeedsByGuessing } from "../ai/feed-discoverer.js";
-import { type RssSource } from "../ai/rss-fetcher.js";
+import { listSources, sourceExists, insertSource, getSource, updateSource, deleteSource, getTaxonomyNames } from "../db/source-queries.js";
 
 function getClient(): Anthropic {
   const apiKey = process.env.TRUSTMIND_LLM_API_KEY;
@@ -57,8 +65,7 @@ function getPersonaId(request: any): number {
 
 export function registerGenerateRoutes(app: FastifyInstance, db: Database.Database): void {
   // Seed default rules for persona 1 if none exist (first run)
-  const ruleCount = (db.prepare("SELECT COUNT(*) as count FROM generation_rules WHERE persona_id = 1").get() as any).count;
-  if (ruleCount === 0) {
+  if (getRuleCount(db, 1) === 0) {
     seedDefaultRules(db, 1);
   }
 
@@ -91,14 +98,7 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
         source_count: result.source_count,
       });
 
-      const logs = db
-        .prepare("SELECT model, input_tokens, output_tokens FROM ai_logs WHERE run_id = ?")
-        .all(runId) as Array<{ model: string; input_tokens: number; output_tokens: number }>;
-      completeRun(db, runId, {
-        input_tokens: logs.reduce((s, l) => s + l.input_tokens, 0),
-        output_tokens: logs.reduce((s, l) => s + l.output_tokens, 0),
-        cost_cents: calculateCostCents(logs),
-      });
+      completeRun(db, runId, getRunCost(db, runId));
 
       return {
         research_id: researchId,
@@ -165,14 +165,7 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
         was_stretch: stories[story_index].is_stretch,
       });
 
-      const logs = db
-        .prepare("SELECT model, input_tokens, output_tokens FROM ai_logs WHERE run_id = ?")
-        .all(runId) as Array<{ model: string; input_tokens: number; output_tokens: number }>;
-      completeRun(db, runId, {
-        input_tokens: result.input_tokens,
-        output_tokens: result.output_tokens,
-        cost_cents: calculateCostCents(logs),
-      });
+      completeRun(db, runId, getRunCost(db, runId));
 
       return { generation_id: generationId, drafts: result.drafts };
     } catch (err: any) {
@@ -236,14 +229,7 @@ export function registerGenerateRoutes(app: FastifyInstance, db: Database.Databa
       }
       updateGeneration(db, generation_id, genUpdate);
 
-      const logs = db
-        .prepare("SELECT model, input_tokens, output_tokens FROM ai_logs WHERE run_id = ?")
-        .all(runId) as Array<{ model: string; input_tokens: number; output_tokens: number }>;
-      completeRun(db, runId, {
-        input_tokens: logs.reduce((s, l) => s + l.input_tokens, 0),
-        output_tokens: logs.reduce((s, l) => s + l.output_tokens, 0),
-        cost_cents: calculateCostCents(logs),
-      });
+      completeRun(db, runId, getRunCost(db, runId));
 
       return { final_draft: coachResult.draft, quality: qualityData };
     } catch (err: any) {
@@ -376,14 +362,7 @@ Return JSON only:
         quality_gate_json: JSON.stringify(qualityData),
       });
 
-      const logs = db
-        .prepare("SELECT model, input_tokens, output_tokens FROM ai_logs WHERE run_id = ?")
-        .all(runId) as Array<{ model: string; input_tokens: number; output_tokens: number }>;
-      completeRun(db, runId, {
-        input_tokens: logs.reduce((s, l) => s + l.input_tokens, 0),
-        output_tokens: logs.reduce((s, l) => s + l.output_tokens, 0),
-        cost_cents: calculateCostCents(logs),
-      });
+      completeRun(db, runId, getRunCost(db, runId));
 
       return {
         draft: coachResult.draft,
@@ -508,13 +487,8 @@ Return JSON only:
     if (!validCategories.includes(body.category)) {
       return reply.status(400).send({ error: "Invalid category" });
     }
-    // Get max sort_order for this category within this persona
-    const max = db.prepare(
-      "SELECT COALESCE(MAX(sort_order), -1) as m FROM generation_rules WHERE category = ? AND persona_id = ?"
-    ).get(body.category, personaId) as { m: number };
-    db.prepare(
-      "INSERT INTO generation_rules (category, rule_text, sort_order, enabled, persona_id) VALUES (?, ?, ?, 1, ?)"
-    ).run(body.category, body.rule_text, max.m + 1, personaId);
+    const maxSort = getMaxRuleSortOrder(db, body.category, personaId);
+    insertSingleRule(db, personaId, body.category, body.rule_text, maxSort + 1);
     return { ok: true };
   });
 
@@ -615,16 +589,33 @@ Return JSON only:
     const ruleTexts = rules.filter(r => r.enabled).map(r => r.rule_text);
 
     // Get current writing prompt so the LLM can suggest specific edits
-    const writingPrompt = db.prepare("SELECT value FROM settings WHERE key = 'writing_prompt'").get() as { value: string } | undefined;
+    const writingPromptValue = getSetting(db, "writing_prompt");
 
-    const { analysis, input_tokens, output_tokens } = await analyzeRetro(
-      client, gen.final_draft, body.published_text.trim(), ruleTexts, writingPrompt?.value
-    );
+    // Mark as in-progress so the UI can show a spinner and recover if user navigates away
+    startRetro(db, Number(id), body.published_text.trim());
+
+    let analysis;
+    let input_tokens: number;
+    let output_tokens: number;
+    try {
+      const result = await analyzeRetro(
+        client, gen.final_draft, body.published_text.trim(), ruleTexts, writingPromptValue ?? undefined
+      );
+      analysis = result.analysis;
+      input_tokens = result.input_tokens;
+      output_tokens = result.output_tokens;
+    } catch (err: any) {
+      console.error(`[Retro] Analysis failed for generation ${id}:`, err.message ?? err);
+      if (err.status) console.error(`[Retro] HTTP status: ${err.status}`);
+      if (err.error) console.error(`[Retro] Error body:`, JSON.stringify(err.error));
+      return reply.status(502).send({
+        error: "AI analysis failed",
+        detail: err.message ?? "Unknown error",
+      });
+    }
 
     // Store the published text and analysis
-    db.prepare(
-      `UPDATE generations SET published_text = ?, retro_json = ?, retro_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-    ).run(body.published_text.trim(), JSON.stringify(analysis), Number(id));
+    completeRetro(db, Number(id), JSON.stringify(analysis));
 
     // Update status to published
     updateGeneration(db, Number(id), { status: "published" });
@@ -639,9 +630,7 @@ Return JSON only:
     if (!gen) {
       return reply.status(404).send({ error: "Generation not found" });
     }
-    const row = db.prepare(
-      "SELECT published_text, retro_json, retro_at FROM generations WHERE id = ?"
-    ).get(Number(id)) as { published_text: string | null; retro_json: string | null; retro_at: string | null } | undefined;
+    const row = getRetroResult(db, Number(id));
 
     if (!row?.retro_json) {
       return { retro: null };
@@ -659,25 +648,7 @@ Return JSON only:
 
   app.get("/api/generate/retros/pending", async (request) => {
     const personaId = getPersonaId(request);
-    const rows = db
-      .prepare(
-        `SELECT id, final_draft, published_text, retro_json, retro_at, matched_post_id
-         FROM generations
-         WHERE persona_id = ?
-           AND retro_json IS NOT NULL
-           AND retro_at IS NOT NULL
-           AND retro_applied_at IS NULL
-         ORDER BY retro_at DESC
-         LIMIT 10`
-      )
-      .all(personaId) as Array<{
-        id: number;
-        final_draft: string;
-        published_text: string;
-        retro_json: string;
-        retro_at: string;
-        matched_post_id: string | null;
-      }>;
+    const rows = getPendingRetros(db, personaId);
 
     return {
       retros: rows.map((r) => ({
@@ -692,9 +663,7 @@ Return JSON only:
 
   app.patch("/api/generate/retros/:id/apply", async (request) => {
     const { id } = request.params as { id: string };
-    db.prepare(
-      "UPDATE generations SET retro_applied_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).run(Number(id));
+    markRetroApplied(db, Number(id));
     return { ok: true };
   });
 
@@ -724,14 +693,7 @@ Return JSON only:
         return { id: changeId, ...change };
       });
 
-      const logs = db
-        .prepare("SELECT model, input_tokens, output_tokens FROM ai_logs WHERE run_id = ?")
-        .all(runId) as Array<{ model: string; input_tokens: number; output_tokens: number }>;
-      completeRun(db, runId, {
-        input_tokens: result.input_tokens,
-        output_tokens: result.output_tokens,
-        cost_cents: calculateCostCents(logs),
-      });
+      completeRun(db, runId, getRunCost(db, runId));
 
       return { sync_id: syncId, changes };
     } catch (err: any) {
@@ -750,9 +712,7 @@ Return JSON only:
     const changeId = Number(id);
 
     // Get the change record
-    const change = db
-      .prepare("SELECT * FROM coaching_change_log WHERE id = ?")
-      .get(changeId) as any;
+    const change = getCoachingChange(db, changeId);
     if (!change) {
       return reply.status(404).send({ error: "Change not found" });
     }
@@ -816,23 +776,16 @@ Return JSON only:
 
     try {
       // Pass previously discovered topics so the LLM avoids repeating them
-      const prevRaw = db.prepare("SELECT value FROM settings WHERE key = 'last_discovery_labels'").get() as { value: string } | undefined;
-      const previousLabels = prevRaw ? JSON.parse(prevRaw.value) as string[] : [];
+      const prevRaw = getSetting(db, "last_discovery_labels");
+      const previousLabels = prevRaw ? JSON.parse(prevRaw) as string[] : [];
 
       const result = await discoverTopics(client, db, logger, previousLabels);
 
       // Store this round's labels for next time
       const allLabels = result.categories.flatMap(c => c.topics.map(t => t.label));
-      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_discovery_labels', ?)").run(JSON.stringify(allLabels));
+      upsertSetting(db, "last_discovery_labels", JSON.stringify(allLabels));
 
-      const logs = db
-        .prepare("SELECT model, input_tokens, output_tokens FROM ai_logs WHERE run_id = ?")
-        .all(runId) as Array<{ model: string; input_tokens: number; output_tokens: number }>;
-      completeRun(db, runId, {
-        input_tokens: logs.reduce((s, l) => s + l.input_tokens, 0),
-        output_tokens: logs.reduce((s, l) => s + l.output_tokens, 0),
-        cost_cents: calculateCostCents(logs),
-      });
+      completeRun(db, runId, getRunCost(db, runId));
 
       return result;
     } catch (err: any) {
@@ -845,10 +798,7 @@ Return JSON only:
 
   app.get("/api/sources", async (request) => {
     const personaId = getPersonaId(request);
-    const sources = db
-      .prepare("SELECT id, name, feed_url, enabled, created_at FROM research_sources WHERE persona_id = ? ORDER BY name")
-      .all(personaId) as RssSource[];
-    return { sources };
+    return { sources: listSources(db, personaId) };
   });
 
   app.post("/api/sources", async (request, reply) => {
@@ -871,20 +821,15 @@ Return JSON only:
     const feed = feeds[0];
 
     // Check for duplicate within this persona
-    const existing = db
-      .prepare("SELECT id FROM research_sources WHERE feed_url = ? AND persona_id = ?")
-      .get(feed.feed_url, personaId);
-    if (existing) {
+    if (sourceExists(db, feed.feed_url, personaId)) {
       return reply.status(409).send({ error: "This source is already added." });
     }
 
-    const result = db
-      .prepare("INSERT INTO research_sources (name, feed_url, persona_id) VALUES (?, ?, ?)")
-      .run(feed.title, feed.feed_url, personaId);
+    const sourceId = insertSource(db, feed.title, feed.feed_url, personaId);
 
     return {
       source: {
-        id: result.lastInsertRowid,
+        id: sourceId,
         name: feed.title,
         feed_url: feed.feed_url,
         enabled: 1,
@@ -897,17 +842,11 @@ Return JSON only:
     const { id } = request.params as { id: string };
     const { enabled, name } = request.body as { enabled?: boolean; name?: string };
 
-    const source = db.prepare("SELECT id FROM research_sources WHERE id = ? AND persona_id = ?").get(Number(id), personaId);
-    if (!source) {
+    if (!getSource(db, Number(id), personaId)) {
       return reply.status(404).send({ error: "Source not found" });
     }
 
-    if (typeof enabled === "boolean") {
-      db.prepare("UPDATE research_sources SET enabled = ? WHERE id = ? AND persona_id = ?").run(enabled ? 1 : 0, Number(id), personaId);
-    }
-    if (typeof name === "string" && name.trim()) {
-      db.prepare("UPDATE research_sources SET name = ? WHERE id = ? AND persona_id = ?").run(name.trim(), Number(id), personaId);
-    }
+    updateSource(db, Number(id), personaId, { enabled, name });
 
     return { ok: true };
   });
@@ -915,8 +854,7 @@ Return JSON only:
   app.delete("/api/sources/:id", async (request, reply) => {
     const personaId = getPersonaId(request);
     const { id } = request.params as { id: string };
-    const result = db.prepare("DELETE FROM research_sources WHERE id = ? AND persona_id = ?").run(Number(id), personaId);
-    if (result.changes === 0) {
+    if (!deleteSource(db, Number(id), personaId)) {
       return reply.status(404).send({ error: "Source not found" });
     }
     return { ok: true };
@@ -930,10 +868,7 @@ Return JSON only:
     // Fall back to taxonomy topics if none provided
     let topicList = topics;
     if (!topicList || topicList.length === 0) {
-      const rows = db
-        .prepare("SELECT name FROM ai_taxonomy ORDER BY name")
-        .all() as { name: string }[];
-      topicList = rows.map((r) => r.name);
+      topicList = getTaxonomyNames(db);
     }
 
     if (topicList.length === 0) {
