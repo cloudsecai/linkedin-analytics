@@ -57,7 +57,8 @@ export function buildApp(dbPath: string) {
   // Bearer token validation — permissive during migration period
   app.addHook("preHandler", async (request, reply) => {
     // Skip auth for health check, token retrieval, and static files
-    if (request.url === "/api/health" || request.url === "/api/auth/token") return;
+    const path = request.url.split("?")[0];
+    if (path === "/api/health" || path === "/api/auth/token") return;
     if (!request.url.startsWith("/api/")) return;
 
     const auth = request.headers.authorization;

@@ -53,9 +53,6 @@ export function registerSourceRoutes(app: FastifyInstance, db: Database.Database
   app.post("/api/sources", async (request, reply) => {
     const personaId = getPersonaId(request);
     const { url } = validateBody(sourceUrlBody, request.body);
-    if (!url || typeof url !== "string" || !url.trim()) {
-      return reply.status(400).send({ error: "url is required" });
-    }
 
     // Auto-discover feeds from the URL
     let feeds = await discoverFeeds(url.trim());

@@ -8,7 +8,7 @@ export function now(): string {
 export function dateSubtract(days: number | string): string {
   // SQLite: datetime('now', '-N days')
   // Postgres: NOW() - INTERVAL 'N days'
-  return `datetime('now', '-' || ${typeof days === "string" ? days : days} || ' days')`;
+  return `datetime('now', '-' || ${days} || ' days')`;
 }
 
 export function upsertConflict(conflictTarget: string, updateCols: string[]): string {
