@@ -66,6 +66,31 @@ chrome.webRequest.onCompleted.addListener(
   { urls: ["*://dms.licdn.com/playlist/vid/*"] }
 );
 
+// Detect when the user publishes a LinkedIn post.
+// Uses chrome.alarms instead of setTimeout because MV3 service workers
+// are ephemeral and may be killed before a setTimeout fires.
+const PUBLISH_URL_PATTERN = '*://*.linkedin.com/voyager/api/contentcreation/normShares*';
+
+chrome.webRequest.onCompleted.addListener(
+  (details) => {
+    if (details.statusCode < 200 || details.statusCode >= 300) return;
+    if (details.method !== 'POST') return;
+
+    console.log('[Publish] Detected normShares completion, scheduling scrape');
+
+    // chrome.alarms.create with the same name is idempotent — it overwrites
+    // the previous alarm. If multiple normShares fire for a single publish
+    // (e.g., media upload + post creation), each overwrites the last, and
+    // the final alarm fires once.
+    //
+    // chrome.alarms minimum delay is 30 seconds (0.5 minutes) — Chrome
+    // silently clamps lower values. This gives LinkedIn time to process
+    // the post before we scrape.
+    chrome.alarms.create('publish-scrape', { delayInMinutes: 0.5 });
+  },
+  { urls: [PUBLISH_URL_PATTERN] }
+);
+
 // Also try to drain offline queue on worker start
 drainOfflineQueue();
 
@@ -77,6 +102,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await continueSyncBatch();
   } else if (alarm.name === "backfill-continue") {
     await continueBackfill();
+  } else if (alarm.name === "publish-scrape") {
+    await scrapeLatestPost();
   }
 });
 
@@ -679,6 +706,85 @@ async function scrapeAndSendPostContent(
   await postToServer({
     posts: [content],
   });
+}
+
+/**
+ * Scrape the user's most recent post and send it to the server.
+ * Called after publish detection. Uses the existing scrapePostContent()
+ * and postToServerDirect() functions.
+ *
+ * Limitation: hardcoded to persona 1, same as the DASH video URL listener.
+ * Post IDs are globally unique so the server resolves the correct persona.
+ */
+async function scrapeLatestPost(): Promise<void> {
+  // Skip if a sync is currently in progress — avoid conflicting scrapes
+  const { syncInProgress } = await chrome.storage.session.get('syncInProgress');
+  if (syncInProgress) {
+    console.log('[Publish] Skipping publish scrape — sync in progress');
+    return;
+  }
+
+  let tabId: number | undefined;
+  try {
+    // Open the user's recent activity (posts only, not reshares/comments/reactions)
+    const tab = await chrome.tabs.create({
+      active: false,
+      url: 'https://www.linkedin.com/in/me/recent-activity/posts/',
+    });
+    if (!tab.id) return;
+    tabId = tab.id;
+
+    await waitForTabLoad(tabId);
+    // Brief delay to ensure content script injection
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Extract the most recent post's activity ID from the page
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        // Find the first post's activity URN in the feed
+        const postElements = Array.from(document.querySelectorAll('[data-urn]'));
+        for (const el of postElements) {
+          const urn = el.getAttribute('data-urn') ?? '';
+          const match = urn.match(/activity:(\d+)/);
+          if (match) return match[1];
+        }
+        // Fallback: look for activity links
+        const links = Array.from(document.querySelectorAll('a[href*="activity-"]'));
+        for (const link of links) {
+          const href = (link as HTMLAnchorElement).href;
+          const match = href.match(/activity[:-](\d+)/);
+          if (match) return match[1];
+        }
+        return null;
+      },
+    });
+
+    const postId = result?.result;
+    if (!postId) {
+      console.warn('[ReachLab] Publish detection: could not find latest post ID');
+      if (tabId) try { await chrome.tabs.remove(tabId); } catch {}
+      return;
+    }
+
+    // Reuse existing scrapePostContent() for two-phase content extraction
+    await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
+    const content = await scrapePostContent(tabId, postId);
+
+    // Send via existing ingest endpoint — this triggers auto-retro
+    // on the server side when full_text is present
+    await postToServerDirect({
+      posts: [content],
+    }, 1);
+
+    console.log(`[ReachLab] Publish detection: scraped and sent post ${postId}`);
+  } catch (err: any) {
+    console.error('[ReachLab] Publish detection scrape failed:', err.message);
+  } finally {
+    if (tabId) {
+      try { await chrome.tabs.remove(tabId); } catch {}
+    }
+  }
 }
 
 const CONTENT_BATCH_SIZE = 10;
