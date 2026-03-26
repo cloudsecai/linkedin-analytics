@@ -234,6 +234,16 @@ export interface AnalysisStatus {
   next_auto_regen: string | null;
 }
 
+export interface ScrapeError {
+  error_type: string;
+  page_type: string;
+  selector: string | null;
+  message: string;
+  consecutive_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
 export interface HealthData {
   last_sync_at: string | null;
   sources: {
@@ -833,6 +843,7 @@ export const api = {
     }).then(r => r.json()),
   getApiToken: (): Promise<{ token: string | null }> =>
     fetch("/api/auth/token").then(r => r.json()),
+  getScrapeHealth: () => get<{ errors: ScrapeError[] }>("/scrape-health"),
 };
 
 // RetroChange, RetroRuleSuggestion, RetroPromptEdit, RetroAnalysis — imported from @reachlab/shared

@@ -556,3 +556,46 @@ export function getPostsNeedingImageDownload(db: Database.Database): { id: strin
        AND (image_local_paths IS NULL OR image_local_paths = '[]')`
   ).all() as { id: string; image_urls: string }[];
 }
+
+// ── Scrape health tracking ──────────────────────────────────
+
+export interface ScrapeError {
+  error_type: string;
+  page_type: string;
+  selector: string | null;
+  message: string;
+  consecutive_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export function upsertScrapeError(db: Database.Database, input: {
+  persona_id: number;
+  error_type: string;
+  page_type: string;
+  selector?: string;
+  message: string;
+}): void {
+  db.prepare(
+    `INSERT INTO scrape_errors (persona_id, error_type, page_type, selector, message)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(persona_id, error_type, page_type) DO UPDATE SET
+       consecutive_count = consecutive_count + 1,
+       last_seen_at = CURRENT_TIMESTAMP,
+       message = excluded.message,
+       selector = excluded.selector,
+       resolved_at = NULL`
+  ).run(input.persona_id, input.error_type, input.page_type, input.selector ?? null, input.message);
+}
+
+export function getActiveScrapeErrors(db: Database.Database, personaId: number): ScrapeError[] {
+  return db.prepare(
+    "SELECT error_type, page_type, selector, message, consecutive_count, first_seen_at, last_seen_at FROM scrape_errors WHERE persona_id = ? AND resolved_at IS NULL ORDER BY last_seen_at DESC"
+  ).all(personaId) as ScrapeError[];
+}
+
+export function resolveScrapeErrors(db: Database.Database, personaId: number, pageType: string): void {
+  db.prepare(
+    "UPDATE scrape_errors SET resolved_at = CURRENT_TIMESTAMP, consecutive_count = 0 WHERE persona_id = ? AND page_type = ? AND resolved_at IS NULL"
+  ).run(personaId, pageType);
+}

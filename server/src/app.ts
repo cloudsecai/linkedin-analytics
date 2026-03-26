@@ -16,6 +16,9 @@ import {
   queryHealth,
   getPostsNeedingImageDownload,
   setImageLocalPaths,
+  upsertScrapeError,
+  getActiveScrapeErrors,
+  resolveScrapeErrors,
 } from "./db/queries.js";
 import { getSetting, upsertSetting } from "./db/ai-queries.js";
 import multipart from "@fastify/multipart";
@@ -156,6 +159,28 @@ export function buildApp(dbPath: string) {
       const personaId = getPersonaId(request);
       const snapshots = queryProfile(db, personaId);
       return { snapshots };
+    });
+
+    // Scrape health
+    app.get(`${prefix}/scrape-health`, async (request) => {
+      const personaId = getPersonaId(request);
+      return { errors: getActiveScrapeErrors(db, personaId) };
+    });
+
+    app.post(`${prefix}/scrape-error`, async (request) => {
+      const personaId = getPersonaId(request);
+      const { error_type, page_type, selector, message } = request.body as {
+        error_type: string; page_type: string; selector?: string; message: string;
+      };
+      upsertScrapeError(db, { persona_id: personaId, error_type, page_type, selector, message });
+      return { ok: true };
+    });
+
+    app.post(`${prefix}/scrape-health/resolve`, async (request) => {
+      const personaId = getPersonaId(request);
+      const { page_type } = request.query as { page_type: string };
+      resolveScrapeErrors(db, personaId, page_type);
+      return { ok: true };
     });
   }
 

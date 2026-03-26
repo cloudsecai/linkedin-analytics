@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api, type OverviewData, type AiOverview } from "../api/client";
+import { api, type OverviewData, type AiOverview, type ScrapeError } from "../api/client";
 import KPICard from "../components/KPICard";
 import DateRangeSelector, {
   daysToDateRange,
@@ -36,9 +36,11 @@ export default function Overview() {
   const [aiOverview, setAiOverview] = useState<AiOverview | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [syncWarnings, setSyncWarnings] = useState<Array<{ message: string }>>([]);
+  const [scrapeErrors, setScrapeErrors] = useState<ScrapeError[]>([]);
 
   useEffect(() => {
     api.getSyncHealth().then(r => setSyncWarnings(r.warnings)).catch(() => {});
+    api.getScrapeHealth().then(r => setScrapeErrors(r.errors.filter(e => e.consecutive_count >= 3))).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -106,6 +108,20 @@ export default function Overview() {
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-4 py-3 text-sm text-yellow-200">
           <span className="font-medium">Sync issue detected:</span>{" "}
           {syncWarnings[0].message}
+        </div>
+      )}
+      {scrapeErrors.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-3">
+          <p className="text-amber-200 text-sm font-medium">Scraping Issues Detected</p>
+          {scrapeErrors.map((e) => (
+            <p key={`${e.error_type}-${e.page_type}`} className="text-amber-200/70 text-xs mt-1">
+              {e.page_type} scraper failing since {new Date(e.first_seen_at).toLocaleDateString()}
+              {e.consecutive_count > 1 && ` (${e.consecutive_count} consecutive failures)`}
+            </p>
+          ))}
+          <p className="text-amber-200/50 text-xs mt-2">
+            This usually means LinkedIn changed their page structure. The extension may need an update.
+          </p>
         </div>
       )}
       <div className="flex items-center justify-between">
