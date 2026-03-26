@@ -161,8 +161,14 @@ export function buildApp(dbPath: string) {
   // Persona management routes
   registerPersonaRoutes(app, db);
 
-  // On startup, retry image downloads for posts that have URLs but no local files
+  // On startup, prune old AI logs and retry image downloads
   app.addHook("onReady", async () => {
+    const { pruneOldAiLogs } = await import("./db/ai-queries.js");
+    const pruned = pruneOldAiLogs(db);
+    if (pruned > 0) {
+      console.log(`[Startup] Pruned ${pruned} AI log entries older than 14 days`);
+    }
+
     const postsNeedingDownload = getPostsNeedingImageDownload(db);
 
     if (postsNeedingDownload.length > 0) {

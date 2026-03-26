@@ -1316,3 +1316,10 @@ export function clearPromptSuggestions(db: Database.Database): void {
 export function deleteSetting(db: Database.Database, key: string): void {
   db.prepare("DELETE FROM settings WHERE key = ?").run(key);
 }
+
+export function pruneOldAiLogs(db: Database.Database, retentionDays: number = 14): number {
+  const result = db.prepare(
+    "DELETE FROM ai_logs WHERE created_at < datetime('now', '-' || ? || ' days')"
+  ).run(retentionDays);
+  return result.changes;
+}

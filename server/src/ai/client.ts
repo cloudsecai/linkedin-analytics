@@ -43,6 +43,8 @@ export function createClient(apiKey: string): Anthropic {
   return new Anthropic({
     apiKey,
     baseURL: "https://openrouter.ai/api",
+    timeout: 90_000,
+    maxRetries: 2,
     fetch: async (url: RequestInfo | URL, init?: RequestInit) => {
       // OpenRouter requires Bearer auth and provider routing header
       const headers = new Headers(init?.headers);
