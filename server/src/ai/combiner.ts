@@ -66,7 +66,7 @@ Return the combined post as plain text (no JSON, no markdown headers). Use line 
     max_tokens: 2000,
     ...(systemPrompt ? { system: systemPrompt } : {}),
     messages: [{ role: "user", content: prompt }],
-  });
+  }, { timeout: 90_000, maxRetries: 1 });
 
   const duration = Date.now() - start;
   let text =
@@ -110,7 +110,7 @@ Return only the tightened post as plain text.`;
         model: MODELS.SONNET,
         max_tokens: 2000,
         messages: [{ role: "user", content: tightenPrompt }],
-      });
+      }, { timeout: 90_000, maxRetries: 1 });
 
       const tightenDuration = Date.now() - tightenStart;
       const tightenedText =

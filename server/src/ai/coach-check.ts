@@ -118,7 +118,7 @@ async function runCoachCheck(
     max_tokens: 4000,
     system: "You are a writing quality coach. Return valid JSON only.",
     messages: [{ role: "user", content: prompt }],
-  });
+  }, { timeout: 90_000, maxRetries: 1 });
 
   const duration = Date.now() - start;
   const text =
@@ -184,7 +184,7 @@ Return ONLY the revised draft as plain text (no JSON, no markdown fences).`;
     max_tokens: 2000,
     system: "You are a concise LinkedIn post editor. Return only the revised draft text.",
     messages: [{ role: "user", content: prompt }],
-  });
+  }, { timeout: 90_000, maxRetries: 1 });
 
   const duration = Date.now() - start;
   const text =

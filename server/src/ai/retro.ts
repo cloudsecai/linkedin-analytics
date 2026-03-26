@@ -9,7 +9,8 @@ export async function analyzeRetro(
   draftText: string,
   publishedText: string,
   existingRules: string[],
-  currentWritingPrompt?: string
+  currentWritingPrompt?: string,
+  requestOptions?: { timeout?: number; maxRetries?: number }
 ): Promise<{ analysis: RetroAnalysis; input_tokens: number; output_tokens: number }> {
   const rulesBlock = existingRules.length > 0
     ? `\nEXISTING GENERATION RULES (don't suggest duplicates of these):\n${existingRules.map((r, i) => `${i + 1}. ${r}`).join("\n")}\n`
@@ -101,7 +102,7 @@ IMPORTANT:
 - Do NOT manufacture insights from noise. Fewer high-confidence principles are better than many speculative ones.
 - Each pattern should be supported by at least 2 changes. One-off edits are more likely incidental.`
     }],
-  });
+  }, requestOptions ?? { timeout: 90_000, maxRetries: 1 });
 
   const text = response.content[0].type === "text" ? response.content[0].text : "";
   const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();

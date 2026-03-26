@@ -125,7 +125,8 @@ export async function runAutoRetro(
         gen.final_draft,
         post.full_text,
         rules,
-        writingPrompt
+        writingPrompt,
+        { timeout: 120_000, maxRetries: 2 }
       );
       db.prepare(
         "UPDATE generations SET retro_json = ?, retro_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"

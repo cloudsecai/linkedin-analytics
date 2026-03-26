@@ -76,7 +76,7 @@ Return JSON:
 }`,
           },
         ],
-      });
+      }, { timeout: 90_000, maxRetries: 1 });
 
       const duration = Date.now() - start;
       const text =

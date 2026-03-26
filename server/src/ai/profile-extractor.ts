@@ -60,7 +60,7 @@ Return JSON with two fields:
 Return valid JSON only. No markdown fences.`,
       },
     ],
-  });
+  }, { timeout: 90_000, maxRetries: 1 });
 
   const text = response.content[0].type === "text" ? response.content[0].text : "";
   const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "");
