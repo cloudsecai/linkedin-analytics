@@ -164,9 +164,6 @@ export function registerInsightsRoutes(app: FastifyInstance, db: Database.Databa
   app.patch("/api/insights/recommendations/:id/resolve", async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = validateBody(resolveBody, request.body);
-    if (!body.type || !["accepted", "dismissed"].includes(body.type)) {
-      return reply.status(400).send({ error: "Provide type: 'accepted' or 'dismissed'" });
-    }
     if (!getRecommendationById(db, Number(id))) {
       return reply.status(404).send({ error: "Recommendation not found" });
     }

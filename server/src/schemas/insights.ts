@@ -13,5 +13,5 @@ export const feedbackBody = z.object({
 });
 
 export const resolveBody = z.object({
-  type: z.enum(["accepted", "dismissed"]).optional(),
+  type: z.enum(["accepted", "dismissed"]),
 });

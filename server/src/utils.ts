@@ -6,8 +6,14 @@ import type { FastifyRequest } from "fastify";
  */
 export function getPersonaId(request: FastifyRequest): number {
   const params = request.params as any;
-  if (params.personaId) return Number(params.personaId);
+  if (params.personaId) {
+    const n = parseInt(params.personaId, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
   const query = request.query as any;
-  if (query.personaId) return Number(query.personaId);
+  if (query.personaId) {
+    const n = parseInt(query.personaId, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
   return 1;
 }

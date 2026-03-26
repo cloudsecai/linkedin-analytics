@@ -126,10 +126,7 @@ export function registerSettingsRoutes(
 
   app.put("/api/settings/timezone", async (request, reply) => {
     const body = validateBody(timezoneBody, request.body);
-    if (!body.timezone || typeof body.timezone !== "string") {
-      return reply.status(400).send({ error: "timezone is required" });
-    }
-    if (!isValidTimezone(body.timezone)) {
+    if (!body.timezone || !isValidTimezone(body.timezone)) {
       return reply.status(400).send({ error: "Invalid timezone" });
     }
     upsertSetting(db, "timezone", body.timezone);
@@ -146,7 +143,7 @@ export function registerSettingsRoutes(
   app.put("/api/settings/writing-prompt", async (request, reply) => {
     const personaId = getPersonaId(request);
     const body = validateBody(writingPromptBody, request.body);
-    if (!body.text || typeof body.text !== "string") {
+    if (!body.text) {
       return reply.status(400).send({ error: "text is required" });
     }
     const source = body.source ?? "manual_edit";
@@ -180,9 +177,6 @@ export function registerSettingsRoutes(
     const body = validateBody(autoRefreshBody, request.body);
 
     if (body.schedule !== undefined) {
-      if (!["daily", "weekly", "off"].includes(body.schedule)) {
-        return reply.status(400).send({ error: "schedule must be daily, weekly, or off" });
-      }
       upsertSetting(db, "auto_interpret_schedule", body.schedule);
     }
 
@@ -209,11 +203,8 @@ export function registerSettingsRoutes(
 
   app.post("/api/settings/kv", async (request, reply) => {
     const { key, value } = validateBody(settingBody, request.body);
-    if (!key || typeof key !== "string" || !ALLOWED_KV_KEYS.has(key)) {
+    if (!ALLOWED_KV_KEYS.has(key)) {
       return reply.status(400).send({ error: "Invalid setting key" });
-    }
-    if (typeof value !== "string" || value.length > 1000) {
-      return reply.status(400).send({ error: "Invalid value" });
     }
     upsertSetting(db, key, value);
     return { ok: true };

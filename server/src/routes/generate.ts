@@ -434,9 +434,6 @@ Return JSON only:
   app.post("/api/generate/rules/add", async (request, reply) => {
     const personaId = getPersonaId(request);
     const body = validateBody(addRuleBody, request.body);
-    if (!body.category || !body.rule_text) {
-      return reply.status(400).send({ error: "category and rule_text required" });
-    }
     const validCategories = ["voice_tone", "structure_formatting", "anti_ai_tropes"];
     if (!validCategories.includes(body.category)) {
       return reply.status(400).send({ error: "Invalid category" });

@@ -17,7 +17,7 @@ export const autoRefreshBody = z.object({
 
 export const settingBody = z.object({
   key: z.string().min(1),
-  value: z.string(),
+  value: z.string().max(1000),
 });
 
 export const configKeysBody = z.object({
