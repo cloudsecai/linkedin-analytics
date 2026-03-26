@@ -662,6 +662,7 @@ export function getActiveGeneration(db: Database.Database, personaId: number): G
     WHERE persona_id = ?
       AND status = 'draft'
       AND drafts_json IS NOT NULL
+      AND json_valid(drafts_json)
       AND json_array_length(drafts_json) > 0
       AND updated_at > datetime('now', '-7 days')
     ORDER BY updated_at DESC

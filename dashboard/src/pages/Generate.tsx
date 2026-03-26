@@ -74,7 +74,8 @@ async function restoreGeneration(data: any): Promise<RestoreResult | null> {
   let qualityGate: GenCoachCheckQuality | null;
   try {
     drafts = data.drafts_json ? JSON.parse(data.drafts_json) : [];
-    selectedIndices = data.selected_draft_indices ? JSON.parse(data.selected_draft_indices) : [];
+    const rawIndices = data.selected_draft_indices ? JSON.parse(data.selected_draft_indices) : [];
+    selectedIndices = Array.isArray(rawIndices) ? rawIndices.filter((i: unknown) => Number.isInteger(i)) : [];
     qualityGate = data.quality_gate_json ? JSON.parse(data.quality_gate_json) : null;
   } catch (err) {
     console.error("[Generate] Failed to parse generation JSON:", err);
@@ -87,8 +88,8 @@ async function restoreGeneration(data: any): Promise<RestoreResult | null> {
     try {
       const msgs = await api.generateChatHistory(data.id);
       chatMessages = msgs.map((m: any) => ({ role: m.role, content: m.display_content ?? m.content }));
-    } catch {
-      // Chat history is non-critical — proceed without it
+    } catch (chatErr) {
+      console.warn("[Generate] Chat history load failed for generation", data.id, chatErr);
     }
   }
 
@@ -107,7 +108,7 @@ async function restoreGeneration(data: any): Promise<RestoreResult | null> {
     finalDraft: data.final_draft ?? "",
     qualityGate,
     personalConnection: data.personal_connection ?? "",
-    draftLength: data.draft_length ?? "medium",
+    draftLength: ["short", "medium", "long"].includes(data.draft_length) ? data.draft_length : "medium",
     chatMessages,
   };
 
@@ -168,7 +169,6 @@ export default function Generate() {
     <div>
       <div className="flex items-center justify-between">
         <SubTabBar active={subTab} onChange={(tab) => {
-          userActedRef.current = true;
           setSubTab(tab);
           if (tab !== "Generate") {
             setGen((prev) => ({ ...prev, discoveryTopics: null }));

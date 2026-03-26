@@ -459,7 +459,11 @@ Return JSON only:
     if (row.research_id) {
       const research = getResearch(db, row.research_id);
       if (research) {
-        stories = JSON.parse(research.stories_json);
+        try {
+          stories = JSON.parse(research.stories_json);
+        } catch {
+          console.warn(`[Generate] Malformed stories_json for research ${row.research_id}`);
+        }
         articleCount = research.article_count ?? 0;
         sourceCount = research.source_count ?? 0;
       }

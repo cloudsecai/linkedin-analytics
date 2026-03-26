@@ -189,19 +189,23 @@ describe("GET /api/generate/active", () => {
   it("returns active generation with enriched research data", async () => {
     // Insert research + generation directly via the DB
     const db = initDatabase(TEST_DB_PATH);
-    const { insertResearch, insertGeneration } = await import("../db/generate-queries.js");
-    const researchId = insertResearch(db, 1, {
-      post_type: "general",
-      stories_json: JSON.stringify([{ headline: "Test story", summary: "s", source: "src", age: "today", tag: "t", angles: [], is_stretch: false }]),
-      article_count: 3,
-      source_count: 2,
-    });
-    insertGeneration(db, 1, {
-      research_id: researchId,
-      post_type: "general",
-      selected_story_index: 0,
-      drafts_json: JSON.stringify([{ type: "contrarian", hook: "Hook", body: "Body" }]),
-    });
+    try {
+      const { insertResearch, insertGeneration } = await import("../db/generate-queries.js");
+      const researchId = insertResearch(db, 1, {
+        post_type: "general",
+        stories_json: JSON.stringify([{ headline: "Test story", summary: "s", source: "src", age: "today", tag: "t", angles: [], is_stretch: false }]),
+        article_count: 3,
+        source_count: 2,
+      });
+      insertGeneration(db, 1, {
+        research_id: researchId,
+        post_type: "general",
+        selected_story_index: 0,
+        drafts_json: JSON.stringify([{ type: "contrarian", hook: "Hook", body: "Body" }]),
+      });
+    } finally {
+      db.close();
+    }
 
     const res = await app.inject({ method: "GET", url: "/api/generate/active?personaId=1" });
     expect(res.statusCode).toBe(200);

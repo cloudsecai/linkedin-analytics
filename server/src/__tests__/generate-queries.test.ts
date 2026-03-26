@@ -321,12 +321,10 @@ describe("getActiveGeneration", () => {
     });
     updateGeneration(db, genId, { status: "discarded" });
 
+    // Use a separate persona to avoid interference from other tests
     const result = getActiveGeneration(db, PERSONA_ID);
-    // Should not return discarded generations (may return an older draft one)
-    if (result) {
-      expect(result.status).toBe("draft");
-      expect(result.id).not.toBe(genId);
-    }
+    // All draft generations for this persona should be discarded at this point
+    expect(result).toBeUndefined();
   });
 
   it("does not return generations with empty drafts", () => {
