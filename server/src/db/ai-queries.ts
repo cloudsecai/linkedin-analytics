@@ -1,6 +1,29 @@
 import type Database from "better-sqlite3";
 import { calculateCostCents } from "../ai/client.js";
 import { computeWeightedER, median } from "../ai/stats-report.js";
+import type {
+  PromptSuggestion,
+  PromptSuggestions,
+  MetricsSummary,
+  CategoryPerformance,
+  SparklinePoint,
+  EngagementQuality,
+  TopicPerformance,
+  HookPerformance,
+  ImageSubtypePerformance,
+} from "@reachlab/shared";
+
+export type {
+  PromptSuggestion,
+  PromptSuggestions,
+  MetricsSummary,
+  CategoryPerformance,
+  SparklinePoint,
+  EngagementQuality,
+  TopicPerformance,
+  HookPerformance,
+  ImageSubtypePerformance,
+};
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -662,17 +685,7 @@ export function getLatestAnalysisGaps(db: Database.Database, personaId: number):
 
 // ── prompt suggestions (stored in ai_overview) ─────────────
 
-export interface PromptSuggestion {
-  current: string;
-  suggested: string;
-  evidence: string;
-}
-
-export interface PromptSuggestions {
-  assessment: "working_well" | "suggest_changes";
-  reasoning: string;
-  suggestions: PromptSuggestion[];
-}
+// PromptSuggestion, PromptSuggestions — imported from @reachlab/shared
 
 export function getLatestPromptSuggestions(db: Database.Database, personaId: number): PromptSuggestions | null {
   const latest = getLatestCompletedRun(db, personaId);
@@ -769,12 +782,7 @@ export function getRecommendationsWithCooldown(
 
 // ── deep dive: progress ───────────────────────────────────
 
-export interface MetricsSummary {
-  median_er: number | null;
-  median_impressions: number | null;
-  total_posts: number;
-  avg_comments: number | null;
-}
+// MetricsSummary — imported from @reachlab/shared
 
 export function getProgressMetrics(
   db: Database.Database,
@@ -833,14 +841,7 @@ export function getProgressMetrics(
 
 // ── deep dive: category performance ───────────────────────
 
-export interface CategoryPerformance {
-  category: string;
-  post_count: number;
-  median_er: number | null;
-  median_impressions: number | null;
-  median_interactions: number | null;
-  status: "underexplored_high" | "reliable" | "declining" | "normal";
-}
+// CategoryPerformance — imported from @reachlab/shared
 
 export function getCategoryPerformance(db: Database.Database, personaId: number): CategoryPerformance[] {
   const rows = db
@@ -922,14 +923,7 @@ export function getCategoryPerformance(db: Database.Database, personaId: number)
 
 // ── deep dive: engagement quality ─────────────────────────
 
-export interface EngagementQuality {
-  comment_ratio: number | null;
-  save_rate: number | null;
-  repost_rate: number | null;
-  weighted_er: number | null;
-  standard_er: number | null;
-  total_posts: number;
-}
+// EngagementQuality — imported from @reachlab/shared
 
 export function getEngagementQuality(db: Database.Database, personaId: number): EngagementQuality {
   const rows = db
@@ -997,14 +991,7 @@ export function getEngagementQuality(db: Database.Database, personaId: number): 
 
 // ── sparkline data: per-post time series ─────────────────
 
-export interface SparklinePoint {
-  date: string;
-  er: number;
-  impressions: number;
-  comments: number;
-  comment_ratio: number;
-  save_rate: number;
-}
+// SparklinePoint — imported from @reachlab/shared
 
 export function getSparklineData(
   db: Database.Database,
@@ -1073,13 +1060,7 @@ export function getRecentFeedbackWithReasons(
 
 // ── deep dive: topic performance ─────────────────────────
 
-export interface TopicPerformance {
-  topic: string;
-  post_count: number;
-  median_wer: number;
-  median_impressions: number;
-  median_comments: number;
-}
+// TopicPerformance — imported from @reachlab/shared
 
 export function getTopicPerformance(db: Database.Database, personaId: number, days?: number): TopicPerformance[] {
   const params: any[] = [personaId];
@@ -1124,13 +1105,7 @@ export function getTopicPerformance(db: Database.Database, personaId: number, da
 
 // ── deep dive: hook type performance ─────────────────────
 
-export interface HookPerformance {
-  name: string;
-  post_count: number;
-  median_wer: number;
-  median_impressions: number;
-  median_comments: number;
-}
+// HookPerformance — imported from @reachlab/shared
 
 export function getHookPerformance(db: Database.Database, personaId: number, days?: number): {
   by_hook_type: HookPerformance[];
@@ -1192,13 +1167,7 @@ export function getHookPerformance(db: Database.Database, personaId: number, day
 
 // ── deep dive: image subtype performance ─────────────────
 
-export interface ImageSubtypePerformance {
-  format: string;
-  post_count: number;
-  median_wer: number;
-  median_impressions: number;
-  median_comments: number;
-}
+// ImageSubtypePerformance — imported from @reachlab/shared
 
 export function getImageSubtypePerformance(db: Database.Database, personaId: number, days?: number): ImageSubtypePerformance[] {
   const params: any[] = [personaId];

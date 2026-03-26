@@ -1,4 +1,7 @@
 import type Database from "better-sqlite3";
+import type { Story, Draft } from "@reachlab/shared";
+
+export type { Story, Draft };
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -29,25 +32,7 @@ export interface PostTypeTemplate {
   template_text: string;
 }
 
-export interface Story {
-  headline: string;
-  summary: string;
-  source: string;
-  source_url?: string;
-  age: string;
-  tag: string;
-  angles: string[];
-  is_stretch: boolean;
-}
-
-export interface Draft {
-  type: "contrarian" | "operator" | "future";
-  hook: string;
-  body: string;
-  closing: string;
-  word_count: number;
-  structure_label: string;
-}
+// Story, Draft — imported from @reachlab/shared
 
 export interface QualityCheck {
   name: string;

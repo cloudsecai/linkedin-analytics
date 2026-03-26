@@ -2,3 +2,4 @@ packages:
   - server
   - extension
   - dashboard
+  - "packages/*"

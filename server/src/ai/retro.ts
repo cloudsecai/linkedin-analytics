@@ -1,37 +1,8 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { MODELS } from "./client.js";
+import type { RetroChange, RetroRuleSuggestion, RetroPromptEdit, RetroAnalysis } from "@reachlab/shared";
 
-export interface RetroChange {
-  category: "structural" | "voice" | "content" | "hook" | "closing" | "cut" | "added";
-  significance: "high" | "medium";
-  principle: string;
-  draft_excerpt?: string;
-  published_excerpt?: string;
-}
-
-export interface RetroRuleSuggestion {
-  action: "add" | "update";
-  category: "voice_tone" | "structure_formatting" | "anti_ai_tropes";
-  rule_text: string;
-  evidence: string;
-}
-
-export interface RetroPromptEdit {
-  type: "add" | "remove" | "replace";
-  remove_text?: string;
-  add_text: string;
-  reason: string;
-}
-
-export interface RetroAnalysis {
-  core_message_same: boolean;
-  surface_changes_summary: string;
-  changes: RetroChange[];
-  patterns: string[];
-  rule_suggestions: RetroRuleSuggestion[];
-  prompt_edits: RetroPromptEdit[];
-  summary: string;
-}
+export type { RetroChange, RetroRuleSuggestion, RetroPromptEdit, RetroAnalysis };
 
 export async function analyzeRetro(
   client: Anthropic,

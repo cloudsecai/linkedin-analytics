@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@reachlab/shared": "workspace:*",
     "chart.js": "^4.4.0",
     "react": "^19.0.0",
     "react-chartjs-2": "^5.2.0",
