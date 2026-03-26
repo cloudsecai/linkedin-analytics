@@ -175,7 +175,7 @@ export function backfillRunCost(db: Database.Database, runId: number, costCents:
 
 // ── log pruning ────────────────────────────────────────────
 
-export function pruneOldAiLogs(db: Database.Database, retentionDays: number = 14): number {
+export function pruneOldAiLogs(db: Database.Database, retentionDays: number = 30): number {
   const result = db.prepare(
     "DELETE FROM ai_logs WHERE created_at < datetime('now', '-' || ? || ' days')"
   ).run(retentionDays);

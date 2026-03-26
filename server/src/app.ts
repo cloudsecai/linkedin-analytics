@@ -224,7 +224,7 @@ export function buildApp(dbPath: string) {
     const { pruneOldAiLogs } = await import("./db/ai-queries.js");
     const pruned = pruneOldAiLogs(db);
     if (pruned > 0) {
-      console.log(`[Startup] Pruned ${pruned} AI log entries older than 14 days`);
+      console.log(`[Startup] Pruned ${pruned} AI log entries older than 30 days`);
     }
 
     const postsNeedingDownload = getPostsNeedingImageDownload(db);
