@@ -671,6 +671,9 @@ export const api = {
 
   // ── Generate History ──────────────────────────────────────
 
+  getActiveGeneration: () =>
+    getUnscoped<{ generation: any | null }>("/generate/active"),
+
   generateHistory: (status = "all", offset = 0, limit = 20) =>
     getUnscoped<GenHistoryResponse>(`/generate/history?status=${status}&offset=${offset}&limit=${limit}`),
 

@@ -14,6 +14,7 @@ import {
   getActiveCoachingInsights,
   insertTopicLog,
   getAntiAiTropesEnabled,
+  getActiveGeneration,
   insertGenerationMessage,
   getGenerationMessages,
   getRuleCount,
@@ -441,6 +442,29 @@ Return JSON only:
     const maxSort = getMaxRuleSortOrder(db, body.category, personaId);
     insertSingleRule(db, personaId, body.category, body.rule_text, maxSort + 1);
     return { ok: true };
+  });
+
+  // ── Active generation (auto-restore) ────────────────────
+
+  app.get('/api/generate/active', async (request) => {
+    const personaId = getPersonaId(request);
+    const row = getActiveGeneration(db, personaId);
+    if (!row) {
+      return { generation: null };
+    }
+    // Enrich with research stories — same logic as history detail endpoint
+    let stories: any[] = [];
+    let articleCount = 0;
+    let sourceCount = 0;
+    if (row.research_id) {
+      const research = getResearch(db, row.research_id);
+      if (research) {
+        stories = JSON.parse(research.stories_json);
+        articleCount = research.article_count ?? 0;
+        sourceCount = research.source_count ?? 0;
+      }
+    }
+    return { generation: { ...row, stories, article_count: articleCount, source_count: sourceCount } };
   });
 
   // ── History ──────────────────────────────────────────────

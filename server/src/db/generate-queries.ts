@@ -650,3 +650,21 @@ export function markRetroApplied(db: Database.Database, generationId: number): v
 export function getCoachingChange(db: Database.Database, id: number): any | undefined {
   return db.prepare("SELECT * FROM coaching_change_log WHERE id = ?").get(id);
 }
+
+// ── Active generation (auto-restore) ────────────────────
+
+export function getActiveGeneration(db: Database.Database, personaId: number): GenerationRecord | undefined {
+  // Only restore generations that have drafts (step 2+). Step-1-only work (topic + research
+  // but no drafts yet) is excluded intentionally — research is cheap to redo and the user
+  // hasn't invested significant review effort at that point.
+  return db.prepare(`
+    SELECT * FROM generations
+    WHERE persona_id = ?
+      AND status = 'draft'
+      AND drafts_json IS NOT NULL
+      AND json_array_length(drafts_json) > 0
+      AND updated_at > datetime('now', '-7 days')
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `).get(personaId) as GenerationRecord | undefined;
+}

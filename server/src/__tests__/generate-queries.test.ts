@@ -27,6 +27,7 @@ import {
   DEFAULT_RULES,
   insertGenerationMessage,
   getGenerationMessages,
+  getActiveGeneration,
 } from "../db/generate-queries.js";
 import { initDatabase } from "../db/index.js";
 
@@ -279,5 +280,93 @@ describe("generation_messages queries", () => {
     // Ordered DESC so most recent first
     expect(messages[0].role).toBe("assistant");
     expect(messages[1].role).toBe("user");
+  });
+});
+
+describe("getActiveGeneration", () => {
+  it("returns the most recent draft generation with drafts", () => {
+    const researchId = insertResearch(db, PERSONA_ID, {
+      post_type: "general",
+      stories_json: JSON.stringify([{ headline: "Active test" }]),
+    });
+    const genId = insertGeneration(db, PERSONA_ID, {
+      research_id: researchId,
+      post_type: "general",
+      selected_story_index: 0,
+      drafts_json: JSON.stringify([{ type: "contrarian", hook: "Test hook", body: "Test body" }]),
+    });
+
+    const active = getActiveGeneration(db, PERSONA_ID);
+    expect(active).toBeDefined();
+    expect(active!.id).toBe(genId);
+    expect(active!.status).toBe("draft");
+  });
+
+  it("does not return discarded generations", () => {
+    // Get the current active, then discard it
+    const active = getActiveGeneration(db, PERSONA_ID);
+    expect(active).toBeDefined();
+    updateGeneration(db, active!.id, { status: "discarded" });
+
+    // Create a new one for cleanup, but discard it too
+    const researchId = insertResearch(db, PERSONA_ID, {
+      post_type: "general",
+      stories_json: "[]",
+    });
+    const genId = insertGeneration(db, PERSONA_ID, {
+      research_id: researchId,
+      post_type: "general",
+      selected_story_index: 0,
+      drafts_json: JSON.stringify([{ type: "test", hook: "Hook" }]),
+    });
+    updateGeneration(db, genId, { status: "discarded" });
+
+    const result = getActiveGeneration(db, PERSONA_ID);
+    // Should not return discarded generations (may return an older draft one)
+    if (result) {
+      expect(result.status).toBe("draft");
+      expect(result.id).not.toBe(genId);
+    }
+  });
+
+  it("does not return generations with empty drafts", () => {
+    const researchId = insertResearch(db, PERSONA_ID, {
+      post_type: "general",
+      stories_json: "[]",
+    });
+    // Insert a generation with empty drafts array
+    insertGeneration(db, PERSONA_ID, {
+      research_id: researchId,
+      post_type: "general",
+      selected_story_index: 0,
+      drafts_json: "[]",
+    });
+
+    const active = getActiveGeneration(db, PERSONA_ID);
+    // Should not return the empty-drafts generation
+    if (active) {
+      const drafts = JSON.parse(active.drafts_json!);
+      expect(drafts.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("does not return generations older than 7 days", () => {
+    const researchId = insertResearch(db, PERSONA_ID, {
+      post_type: "general",
+      stories_json: "[]",
+    });
+    const genId = insertGeneration(db, PERSONA_ID, {
+      research_id: researchId,
+      post_type: "general",
+      selected_story_index: 0,
+      drafts_json: JSON.stringify([{ type: "test", hook: "Old" }]),
+    });
+    // Manually set updated_at to 8 days ago
+    db.prepare("UPDATE generations SET updated_at = datetime('now', '-8 days') WHERE id = ?").run(genId);
+
+    const active = getActiveGeneration(db, PERSONA_ID);
+    if (active) {
+      expect(active.id).not.toBe(genId);
+    }
   });
 });

@@ -3,6 +3,7 @@ import { buildApp } from "../app.js";
 import type { FastifyInstance } from "fastify";
 import fs from "fs";
 import path from "path";
+import { initDatabase } from "../db/index.js";
 
 const TEST_DB_PATH = path.join(import.meta.dirname, "../../data/test-generate-routes.db");
 
@@ -174,6 +175,43 @@ describe("PATCH /api/generate/coaching/changes/:id", () => {
       payload: { action: "skip" },
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("GET /api/generate/active", () => {
+  it("returns null when no active generation exists", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/generate/active?personaId=1" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.generation).toBeNull();
+  });
+
+  it("returns active generation with enriched research data", async () => {
+    // Insert research + generation directly via the DB
+    const db = initDatabase(TEST_DB_PATH);
+    const { insertResearch, insertGeneration } = await import("../db/generate-queries.js");
+    const researchId = insertResearch(db, 1, {
+      post_type: "general",
+      stories_json: JSON.stringify([{ headline: "Test story", summary: "s", source: "src", age: "today", tag: "t", angles: [], is_stretch: false }]),
+      article_count: 3,
+      source_count: 2,
+    });
+    insertGeneration(db, 1, {
+      research_id: researchId,
+      post_type: "general",
+      selected_story_index: 0,
+      drafts_json: JSON.stringify([{ type: "contrarian", hook: "Hook", body: "Body" }]),
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/generate/active?personaId=1" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.generation).not.toBeNull();
+    expect(body.generation.stories).toHaveLength(1);
+    expect(body.generation.stories[0].headline).toBe("Test story");
+    expect(body.generation.article_count).toBe(3);
+    expect(body.generation.source_count).toBe(2);
+    expect(body.generation.status).toBe("draft");
   });
 });
 
