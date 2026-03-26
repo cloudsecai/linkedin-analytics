@@ -5,7 +5,7 @@ export function now(): string {
   return "CURRENT_TIMESTAMP";
 }
 
-export function dateSubtract(column: string, days: number | string): string {
+export function dateSubtract(days: number | string): string {
   // SQLite: datetime('now', '-N days')
   // Postgres: NOW() - INTERVAL 'N days'
   return `datetime('now', '-' || ${typeof days === "string" ? days : days} || ' days')`;
