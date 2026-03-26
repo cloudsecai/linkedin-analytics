@@ -224,10 +224,16 @@ export function registerSettingsRoutes(
   app.get("/api/settings/sync-health", async () => {
     const warning = getSetting(db, "sync_warning");
     const staleWarning = getSetting(db, "sync_stale_warning");
+    const safeParse = (s: string | null) => {
+      if (!s) return null;
+      try { return JSON.parse(s); } catch { return null; }
+    };
+    const parsedWarning = safeParse(warning);
+    const parsedStale = safeParse(staleWarning);
     return {
       warnings: [
-        ...(warning ? [JSON.parse(warning)] : []),
-        ...(staleWarning ? [JSON.parse(staleWarning)] : []),
+        ...(parsedWarning ? [parsedWarning] : []),
+        ...(parsedStale ? [parsedStale] : []),
       ],
     };
   });

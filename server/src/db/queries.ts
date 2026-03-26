@@ -414,7 +414,9 @@ export function queryHealth(db: Database.Database, personaId: number) {
     };
   }
 
-  const getLastSuccess = (field: string) => {
+  const allowedFields = ["posts_status", "followers_status", "profile_status"] as const;
+  const getLastSuccess = (field: typeof allowedFields[number]) => {
+    if (!allowedFields.includes(field)) return null;
     const row = db
       .prepare(
         `SELECT completed_at FROM scrape_log WHERE persona_id = ? AND ${field} = 'success' ORDER BY id DESC LIMIT 1`
