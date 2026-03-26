@@ -831,6 +831,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }).then(r => r.json()),
+  getApiToken: (): Promise<{ token: string | null }> =>
+    fetch("/api/auth/token").then(r => r.json()),
 };
 
 // RetroChange, RetroRuleSuggestion, RetroPromptEdit, RetroAnalysis — imported from @reachlab/shared

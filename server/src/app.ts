@@ -27,10 +27,15 @@ import { registerPersonaRoutes } from "./routes/personas.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 
 import { getPersonaId } from "./utils.js";
+import { ensureDefaultUser, getUserByToken } from "./db/user-queries.js";
 
 export function buildApp(dbPath: string) {
   const app = Fastify({ logger: false });
   const db = initDatabase(dbPath);
+
+  // Auto-create default user with API token on first run
+  const defaultUser = ensureDefaultUser(db);
+  console.log(`[Auth] API token: ${defaultUser.api_token.slice(0, 8)}...`);
 
   app.register(cors, {
     origin: (origin, cb) => {
@@ -44,6 +49,27 @@ export function buildApp(dbPath: string) {
         cb(null, false);
       }
     },
+  });
+
+  // Bearer token validation — permissive during migration period
+  app.addHook("preHandler", async (request, reply) => {
+    // Skip auth for health check, token retrieval, and static files
+    if (request.url === "/api/health" || request.url === "/api/auth/token") return;
+    if (!request.url.startsWith("/api/")) return;
+
+    const auth = request.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      // During migration period: allow unauthenticated requests
+      // Remove this fallback when ready to enforce auth
+      return;
+    }
+
+    const token = auth.slice(7);
+    const user = getUserByToken(db, token);
+    if (!user) {
+      return reply.status(401).send({ error: "Invalid API token" });
+    }
+    (request as any).userId = user.id;
   });
 
   app.addHook("onClose", () => {
@@ -136,6 +162,12 @@ export function buildApp(dbPath: string) {
   // Register routes for both persona-scoped and backward-compatible prefixes
   registerScopedRoutes("/api/personas/:personaId");
   registerScopedRoutes("/api");
+
+  // Auth token endpoint
+  app.get("/api/auth/token", async () => {
+    const { getUserToken } = await import("./db/user-queries.js");
+    return { token: getUserToken(db) };
+  });
 
   // AI Insights routes
   registerInsightsRoutes(app, db);

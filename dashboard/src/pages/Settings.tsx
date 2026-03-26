@@ -47,6 +47,11 @@ export default function Settings() {
   const [copied, setCopied] = useState(false);
   const [copyLoading, setCopyLoading] = useState(false);
 
+  // ── API Token state ─────────────────────────────────────
+  const [apiToken, setApiToken] = useState<string | null>(null);
+  const [tokenVisible, setTokenVisible] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
+
   // ── AI Analysis state ────────────────────────────────────
   const [schedule, setSchedule] = useState<string>("weekly");
   const [postThreshold, setPostThreshold] = useState<number>(5);
@@ -72,6 +77,7 @@ export default function Settings() {
   useEffect(() => {
     api.getWritingPrompt().then((r) => setPromptText(r.text ?? "")).catch(() => showError("Failed to load writing prompt"));
     api.getWritingPromptHistory().then((r) => setPromptHistory(r.history)).catch(() => showError("Failed to load prompt history"));
+    api.getApiToken().then((r) => setApiToken(r.token)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -496,6 +502,36 @@ export default function Settings() {
           )}
         </div>
       </section>
+
+      {/* API Token */}
+      {apiToken && (
+        <section>
+          <SectionHeader title="API Token" description="For the Chrome extension and external integrations" />
+          <div className="bg-surface-1 border border-border rounded-lg p-5">
+            <div className="flex items-center gap-3">
+              <code className="flex-1 text-xs font-mono bg-surface-2 border border-border rounded px-3 py-2 text-text-secondary select-all">
+                {tokenVisible ? apiToken : apiToken.slice(0, 8) + "..." + apiToken.slice(-4)}
+              </code>
+              <button
+                onClick={() => setTokenVisible(!tokenVisible)}
+                className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary transition-colors"
+              >
+                {tokenVisible ? "Hide" : "Show"}
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(apiToken);
+                  setTokenCopied(true);
+                  setTimeout(() => setTokenCopied(false), 2000);
+                }}
+                className="px-3 py-1.5 text-xs font-medium text-accent hover:opacity-80 transition-opacity"
+              >
+                {tokenCopied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* API Keys */}
       <section className="mt-8 pt-6 border-t border-border/30">
