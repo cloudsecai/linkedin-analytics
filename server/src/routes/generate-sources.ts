@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
+import { createDbClient } from "../db/client.js";
 import { listSources, sourceExists, insertSource, getSource, updateSource, deleteSource, getTaxonomyNames } from "../db/source-queries.js";
 import { createRun, completeRun, failRun, getRunCost, getSetting, upsertSetting } from "../db/ai-queries.js";
 import { createClient } from "../ai/client.js";
@@ -9,6 +10,7 @@ import { discoverFeeds, discoverFeedsByGuessing } from "../ai/feed-discoverer.js
 import { getPersonaId } from "../utils.js";
 
 export function registerSourceRoutes(app: FastifyInstance, db: Database.Database): void {
+  const dbc = createDbClient(db);
   // ── Discovery ──────────────────────────────────────────────
 
   app.post("/api/generate/discover", async (request, reply) => {
@@ -43,7 +45,7 @@ export function registerSourceRoutes(app: FastifyInstance, db: Database.Database
 
   app.get("/api/sources", async (request) => {
     const personaId = getPersonaId(request);
-    return { sources: listSources(db, personaId) };
+    return { sources: listSources(dbc, personaId) };
   });
 
   app.post("/api/sources", async (request, reply) => {
@@ -66,11 +68,11 @@ export function registerSourceRoutes(app: FastifyInstance, db: Database.Database
     const feed = feeds[0];
 
     // Check for duplicate within this persona
-    if (sourceExists(db, feed.feed_url, personaId)) {
+    if (sourceExists(dbc, feed.feed_url, personaId)) {
       return reply.status(409).send({ error: "This source is already added." });
     }
 
-    const sourceId = insertSource(db, feed.title, feed.feed_url, personaId);
+    const sourceId = insertSource(dbc, feed.title, feed.feed_url, personaId);
 
     return {
       source: {
@@ -87,11 +89,11 @@ export function registerSourceRoutes(app: FastifyInstance, db: Database.Database
     const { id } = request.params as { id: string };
     const { enabled, name } = request.body as { enabled?: boolean; name?: string };
 
-    if (!getSource(db, Number(id), personaId)) {
+    if (!getSource(dbc, Number(id), personaId)) {
       return reply.status(404).send({ error: "Source not found" });
     }
 
-    updateSource(db, Number(id), personaId, { enabled, name });
+    updateSource(dbc, Number(id), personaId, { enabled, name });
 
     return { ok: true };
   });
@@ -99,7 +101,7 @@ export function registerSourceRoutes(app: FastifyInstance, db: Database.Database
   app.delete("/api/sources/:id", async (request, reply) => {
     const personaId = getPersonaId(request);
     const { id } = request.params as { id: string };
-    if (!deleteSource(db, Number(id), personaId)) {
+    if (!deleteSource(dbc, Number(id), personaId)) {
       return reply.status(404).send({ error: "Source not found" });
     }
     return { ok: true };
@@ -113,7 +115,7 @@ export function registerSourceRoutes(app: FastifyInstance, db: Database.Database
     // Fall back to taxonomy topics if none provided
     let topicList = topics;
     if (!topicList || topicList.length === 0) {
-      topicList = getTaxonomyNames(db);
+      topicList = getTaxonomyNames(dbc);
     }
 
     if (topicList.length === 0) {
