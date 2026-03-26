@@ -265,7 +265,7 @@ Return JSON only:
         max_tokens: 4000,
         system: systemPrompt,
         messages,
-      });
+      }, { timeout: 90_000, maxRetries: 1 });
 
       const duration = Date.now() - start;
       const text = response.content[0].type === "text" ? response.content[0].text : "";
