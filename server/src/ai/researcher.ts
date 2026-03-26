@@ -139,7 +139,7 @@ async function synthesizeTopic(
     max_tokens: 2000,
     system: "You are a content researcher. Return only valid JSON.",
     messages: [{ role: "user", content: synthPrompt }],
-  });
+  }, { timeout: 45_000, maxRetries: 2 });
   const synthDuration = Date.now() - synthStart;
   const synthText =
     synthResponse.content[0].type === "text" ? synthResponse.content[0].text : "";
