@@ -69,24 +69,25 @@ chrome.webRequest.onCompleted.addListener(
 // Detect when the user publishes a LinkedIn post.
 // Uses chrome.alarms instead of setTimeout because MV3 service workers
 // are ephemeral and may be killed before a setTimeout fires.
-const PUBLISH_URL_PATTERN = '*://*.linkedin.com/voyager/api/contentcreation/normShares*';
+const PUBLISH_URL_PATTERN = "*://*.linkedin.com/voyager/api/contentcreation/normShares*";
 
 chrome.webRequest.onCompleted.addListener(
   (details) => {
     if (details.statusCode < 200 || details.statusCode >= 300) return;
-    if (details.method !== 'POST') return;
+    if (details.method !== "POST") return;
 
-    console.log('[Publish] Detected normShares completion, scheduling scrape');
+    console.log("[Publish] Detected normShares completion, scheduling scrape");
 
     // chrome.alarms.create with the same name is idempotent — it overwrites
     // the previous alarm. If multiple normShares fire for a single publish
     // (e.g., media upload + post creation), each overwrites the last, and
-    // the final alarm fires once.
+    // the final alarm fires once. If two publishes happen within 30s, only
+    // the most recent post is scraped; the other is caught by the next sync.
     //
     // chrome.alarms minimum delay is 30 seconds (0.5 minutes) — Chrome
     // silently clamps lower values. This gives LinkedIn time to process
     // the post before we scrape.
-    chrome.alarms.create('publish-scrape', { delayInMinutes: 0.5 });
+    chrome.alarms.create("publish-scrape", { delayInMinutes: 0.5 });
   },
   { urls: [PUBLISH_URL_PATTERN] }
 );
@@ -717,10 +718,15 @@ async function scrapeAndSendPostContent(
  * Post IDs are globally unique so the server resolves the correct persona.
  */
 async function scrapeLatestPost(): Promise<void> {
-  // Skip if a sync is currently in progress — avoid conflicting scrapes
-  const { syncInProgress } = await chrome.storage.session.get('syncInProgress');
-  if (syncInProgress) {
-    console.log('[Publish] Skipping publish scrape — sync in progress');
+  // Skip if a sync or backfill is in progress — avoid conflicting scrapes
+  const { syncInProgress, backfillQueue } = await chrome.storage.session.get([
+    "syncInProgress",
+    "backfillQueue",
+  ]);
+  if (syncInProgress || backfillQueue) {
+    console.log("[Publish] Skipping publish scrape — sync/backfill in progress");
+    // Reschedule so the publish isn't lost — will fire after sync completes
+    chrome.alarms.create("publish-scrape", { delayInMinutes: 1 });
     return;
   }
 
@@ -729,23 +735,25 @@ async function scrapeLatestPost(): Promise<void> {
     // Open the user's recent activity (posts only, not reshares/comments/reactions)
     const tab = await chrome.tabs.create({
       active: false,
-      url: 'https://www.linkedin.com/in/me/recent-activity/posts/',
+      url: "https://www.linkedin.com/in/me/recent-activity/posts/",
     });
-    if (!tab.id) return;
+    if (!tab.id) {
+      console.warn("[Publish] Failed to create tab (no tab.id)");
+      return;
+    }
     tabId = tab.id;
 
     await waitForTabLoad(tabId);
-    // Brief delay to ensure content script injection
+    // Wait for the activity feed DOM to render
     await new Promise((r) => setTimeout(r, 1500));
 
     // Extract the most recent post's activity ID from the page
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
-        // Find the first post's activity URN in the feed
-        const postElements = Array.from(document.querySelectorAll('[data-urn]'));
+        const postElements = Array.from(document.querySelectorAll("[data-urn]"));
         for (const el of postElements) {
-          const urn = el.getAttribute('data-urn') ?? '';
+          const urn = el.getAttribute("data-urn") ?? "";
           const match = urn.match(/activity:(\d+)/);
           if (match) return match[1];
         }
@@ -762,24 +770,35 @@ async function scrapeLatestPost(): Promise<void> {
 
     const postId = result?.result;
     if (!postId) {
-      console.warn('[ReachLab] Publish detection: could not find latest post ID');
-      if (tabId) try { await chrome.tabs.remove(tabId); } catch {}
+      console.warn("[Publish] Could not find latest post ID on activity page");
       return;
     }
 
-    // Reuse existing scrapePostContent() for two-phase content extraction
-    await randomDelay(PACING_MIN_MS, PACING_MAX_MS);
+    // Verify the post is recent (published within last 5 minutes) to avoid
+    // scraping an old post if the activity page hasn't updated yet
+    const postDate = activityIdToDate(postId);
+    if (Date.now() - postDate.getTime() > 5 * 60 * 1000) {
+      console.log("[Publish] Latest post is older than 5 minutes, skipping");
+      return;
+    }
+
     const content = await scrapePostContent(tabId, postId);
 
-    // Send via existing ingest endpoint — this triggers auto-retro
-    // on the server side when full_text is present
-    await postToServerDirect({
-      posts: [content],
-    }, 1);
+    // Only send if we got meaningful content
+    if (!content.full_text && !content.hook_text) {
+      console.warn("[Publish] Scraped post has no text content, skipping ingest");
+      return;
+    }
 
-    console.log(`[ReachLab] Publish detection: scraped and sent post ${postId}`);
+    // Send via existing ingest endpoint with offline queue fallback.
+    // Uses persona 1 (same as DASH video listener — post IDs are globally
+    // unique, and multi-persona support will update this later).
+    await chrome.storage.session.set({ syncActivePersonaId: 1 });
+    await postToServer({ posts: [content] });
+
+    console.log(`[Publish] Scraped and sent post ${postId}`);
   } catch (err: any) {
-    console.error('[ReachLab] Publish detection scrape failed:', err.message);
+    console.error("[Publish] Scrape failed:", err);
   } finally {
     if (tabId) {
       try { await chrome.tabs.remove(tabId); } catch {}
