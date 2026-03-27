@@ -23,7 +23,7 @@ const sortOptions = [
   { value: "published_at", label: "Date" },
   { value: "impressions", label: "Impressions" },
   { value: "engagement_rate", label: "Engagement" },
-  { value: "weighted_engagement", label: "Score" },
+  { value: "weighted_engagement", label: "Score", title: "Weighted engagement: reactions + comments\u00d75 + reposts\u00d73 + saves\u00d75 + sends\u00d74" },
   { value: "reactions", label: "Reactions" },
   { value: "comments", label: "Comments" },
 ];
@@ -157,8 +157,8 @@ export default function Posts() {
       )}
 
       {/* Table */}
-      <div className="bg-surface-1 border border-border rounded-lg">
-        <table className="w-full text-sm">
+      <div className="bg-surface-1 border border-border rounded-lg overflow-x-auto">
+        <table className="w-full text-sm min-w-[900px]">
           <thead>
             <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
               <th className="text-left px-4 py-3 font-medium sticky top-[57px] bg-surface-1 z-10 border-b border-border">
@@ -183,6 +183,7 @@ export default function Posts() {
                 <th
                   key={s.value}
                   onClick={() => toggleSort(s.value)}
+                  title={"title" in s ? s.title : undefined}
                   className="text-right px-4 py-3 font-medium cursor-pointer hover:text-text-primary w-28 sticky top-[57px] bg-surface-1 z-10 border-b border-border"
                 >
                   {s.label}
@@ -216,7 +217,7 @@ export default function Posts() {
                   {showTags && (
                     <td className="px-3 py-3 align-top">
                       {p.post_category && (
-                        <span className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-accent/10 text-accent whitespace-nowrap">
+                        <span className="inline-block px-1.5 py-0.5 rounded text-[11px] text-text-secondary border border-border whitespace-nowrap">
                           {p.post_category.replace(/_/g, " ")}
                         </span>
                       )}
@@ -227,7 +228,7 @@ export default function Posts() {
                     <td className="px-3 py-3 align-top">
                       <div className="flex flex-col gap-1">
                         {parseTopics(p.topics).map((topic) => (
-                          <span key={topic} className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-surface-3 text-text-muted whitespace-nowrap w-fit">
+                          <span key={topic} className="inline-block px-1.5 py-0.5 rounded text-[11px] text-text-muted whitespace-nowrap w-fit">
                             {topic}
                           </span>
                         ))}
