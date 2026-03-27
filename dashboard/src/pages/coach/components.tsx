@@ -220,6 +220,8 @@ export function TimingGrid({ slots }: { slots: TimingSlot[] }) {
 
 // ── Shared Performance Table ─────────────────────────────────
 
+type SortKey = "name" | "post_count" | "median_wer" | "median_impressions" | "median_comments";
+
 export function PerformanceTable({
   rows,
   nameLabel,
@@ -227,19 +229,39 @@ export function PerformanceTable({
   rows: { name: string; post_count: number; median_wer: number; median_impressions: number; median_comments: number }[];
   nameLabel: string;
 }) {
-  const sorted = [...rows].sort((a, b) => b.median_wer - a.median_wer);
-  const bestWer = sorted[0]?.median_wer ?? 0;
+  const [sortKey, setSortKey] = useState<SortKey>("median_wer");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortKey(key);
+      setSortAsc(key === "name"); // name defaults ascending, numbers descending
+    }
+  };
+
+  const sorted = [...rows].sort((a, b) => {
+    const av = a[sortKey];
+    const bv = b[sortKey];
+    const cmp = typeof av === "string" ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+    return sortAsc ? cmp : -cmp;
+  });
+  const bestWer = [...rows].sort((a, b) => b.median_wer - a.median_wer)[0]?.median_wer ?? 0;
+
+  const arrow = (key: SortKey) => sortKey === key ? (sortAsc ? " \u25B2" : " \u25BC") : "";
+  const thClass = "px-4 py-2.5 font-medium text-[10px] cursor-pointer hover:text-text-primary select-none";
 
   return (
     <div className="bg-surface-1 border border-border rounded-lg overflow-hidden">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border text-text-muted uppercase tracking-widest">
-            <th className="text-left px-4 py-2.5 font-medium text-[10px]">{nameLabel}</th>
-            <th className="text-right px-4 py-2.5 font-medium text-[10px]">Posts</th>
-            <th className="text-right px-4 py-2.5 font-medium text-[10px]">Median WER</th>
-            <th className="text-right px-4 py-2.5 font-medium text-[10px]">Median<br />Impressions</th>
-            <th className="text-right px-4 py-2.5 font-medium text-[10px]">Median<br />Comments</th>
+            <th className={`text-left ${thClass}`} onClick={() => handleSort("name")}>{nameLabel}{arrow("name")}</th>
+            <th className={`text-right ${thClass}`} onClick={() => handleSort("post_count")}>Posts{arrow("post_count")}</th>
+            <th className={`text-right ${thClass}`} onClick={() => handleSort("median_wer")}>Median WER{arrow("median_wer")}</th>
+            <th className={`text-right ${thClass}`} onClick={() => handleSort("median_impressions")}>Median<br />Impressions{arrow("median_impressions")}</th>
+            <th className={`text-right ${thClass}`} onClick={() => handleSort("median_comments")}>Median<br />Comments{arrow("median_comments")}</th>
           </tr>
         </thead>
         <tbody>
