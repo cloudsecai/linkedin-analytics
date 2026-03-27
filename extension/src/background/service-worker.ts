@@ -591,7 +591,9 @@ async function processBatch(
     if (metricsToSend.length > 0) {
       await queueForRetry({ post_metrics: metricsToSend });
     }
-    await finishSyncWithError(err.message);
+    console.error(`[ReachLab] processBatch failed:`, err.message);
+    // Don't kill the entire sync — advance to the next persona
+    await advanceToNextPersona();
   }
 }
 
@@ -913,7 +915,9 @@ async function scrapeRemainingPages(tabId: number) {
     await finishPersonaSync(personaId);
     await advanceToNextPersona();
   } catch (err: any) {
-    await finishSyncWithError(err.message);
+    console.error(`[ReachLab] scrapeRemainingPages failed for persona ${personaId}:`, err.message);
+    // Don't kill the entire sync — advance to the next persona
+    await advanceToNextPersona();
   }
 }
 
