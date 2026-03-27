@@ -3,7 +3,7 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type Database from "better-sqlite3";
-import { updatePostTranscript } from "../db/queries.js";
+import { updatePostTranscript, getPostsNeedingTranscription } from "../db/queries.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -104,20 +104,6 @@ async function transcribeAudio(
  * - have a video_url
  * - full_text is just the hook text (short) or null
  */
-export function getPostsNeedingTranscription(
-  db: Database.Database
-): { id: string; video_url: string; hook_text: string | null }[] {
-  return db
-    .prepare(
-      `SELECT id, video_url, hook_text FROM posts
-       WHERE content_type = 'video'
-         AND video_url IS NOT NULL
-         AND (full_text IS NULL OR full_text = hook_text OR length(full_text) < 100)
-       ORDER BY published_at DESC`
-    )
-    .all() as { id: string; video_url: string; hook_text: string | null }[];
-}
-
 /**
  * Transcribe a single video post: download → extract audio → whisper → update DB.
  */

@@ -618,3 +618,17 @@ export function updatePostTranscript(db: Database.Database, postId: string, tran
     "UPDATE posts SET full_text = ? WHERE id = ? AND (full_text IS NULL OR full_text = hook_text OR length(full_text) < 100)"
   ).run(transcript, postId);
 }
+
+export function getPostsNeedingTranscription(
+  db: Database.Database
+): { id: string; video_url: string; hook_text: string | null }[] {
+  return db
+    .prepare(
+      `SELECT id, video_url, hook_text FROM posts
+       WHERE content_type = 'video'
+         AND video_url IS NOT NULL
+         AND (full_text IS NULL OR full_text = hook_text OR length(full_text) < 100)
+       ORDER BY published_at DESC`
+    )
+    .all() as { id: string; video_url: string; hook_text: string | null }[];
+}
