@@ -6,7 +6,7 @@ export { createRun, completeRun, failRun, getRunningRun, getRunCost, getLatestCo
 export type { AiLogInput } from "./ai/runs.js";
 
 // tags
-export { upsertAiTag, getAiTags, getUntaggedPostIds, upsertImageTag, getImageTags, getUnclassifiedImagePosts, upsertTaxonomy, getTaxonomy, setPostTopics, getPostTopics, clearTagsForPersona } from "./ai/tags.js";
+export { upsertAiTag, getAiTags, getUntaggedPostIds, upsertImageTag, getImageTags, getUnclassifiedImagePosts, upsertTaxonomy, getTaxonomy, setPostTopics, getPostTopics, clearTagsForPersona, getPostsForTaxonomy } from "./ai/tags.js";
 export type { AiTag, ImageTagInput, ImageTag } from "./ai/tags.js";
 
 // insights (imports getLatestCompletedRun from ./runs.js)

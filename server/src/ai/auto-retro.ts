@@ -5,9 +5,12 @@ import { analyzeRetro } from "./retro.js";
 import {
   getUnmatchedGenerations,
   updateGeneration,
+  completeRetro,
+  isPostMatchedToGeneration,
   getRules,
 } from "../db/generate-queries.js";
 import { getPersonaSetting } from "../db/ai-queries.js";
+import { getPostForRetro } from "../db/queries.js";
 
 function firstNLines(text: string, n: number): string {
   return text.split("\n").slice(0, n).join("\n");
@@ -78,20 +81,11 @@ export async function runAutoRetro(
   const writingPrompt = getPersonaSetting(db, personaId, "writing_prompt") ?? undefined;
 
   for (const postId of postIds) {
-    const post = db
-      .prepare(
-        "SELECT id, full_text, published_at FROM posts WHERE id = ? AND full_text IS NOT NULL"
-      )
-      .get(postId) as
-      | { id: string; full_text: string; published_at: string }
-      | undefined;
+    const post = getPostForRetro(db, postId);
     if (!post) continue;
 
     // Check if this post is already matched to a generation
-    const alreadyMatched = db
-      .prepare("SELECT id FROM generations WHERE matched_post_id = ?")
-      .get(post.id);
-    if (alreadyMatched) continue;
+    if (isPostMatchedToGeneration(db, post.id)) continue;
 
     const postExcerpt = firstNLines(post.full_text, 10);
     const candidates = generations.map((g) => ({
@@ -110,10 +104,8 @@ export async function runAutoRetro(
     updateGeneration(db, matchId, {
       matched_post_id: post.id,
       status: "published",
+      published_text: post.full_text,
     });
-    db.prepare(
-      "UPDATE generations SET published_text = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-    ).run(post.full_text, matchId);
 
     // Run full retro analysis
     try {
@@ -124,9 +116,7 @@ export async function runAutoRetro(
         rules,
         writingPrompt,
       );
-      db.prepare(
-        "UPDATE generations SET retro_json = ?, retro_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-      ).run(JSON.stringify(analysis), matchId);
+      completeRetro(db, matchId, JSON.stringify(analysis));
       console.log(
         `[Auto-Retro] Matched post ${post.id} → generation ${matchId}, retro complete`
       );

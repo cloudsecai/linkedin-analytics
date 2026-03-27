@@ -208,3 +208,20 @@ export function clearTagsForPersona(db: Database.Database, personaId: number): v
   db.prepare("DELETE FROM ai_post_topics WHERE post_id IN (SELECT id FROM posts WHERE persona_id = ?)").run(personaId);
   db.prepare("DELETE FROM ai_tags WHERE post_id IN (SELECT id FROM posts WHERE persona_id = ?)").run(personaId);
 }
+
+// ── Taxonomy discovery helpers ──────────────────────────────
+
+export function getPostsForTaxonomy(
+  db: Database.Database,
+  incrementalOnly: boolean
+): Array<{ id: string; summary: string | null }> {
+  const query = incrementalOnly
+    ? `SELECT p.id, COALESCE(SUBSTR(p.full_text, 1, 300), p.content_preview) as summary
+       FROM posts p
+       LEFT JOIN ai_post_topics apt ON apt.post_id = p.id
+       WHERE apt.post_id IS NULL
+       ORDER BY p.published_at DESC`
+    : `SELECT id, COALESCE(SUBSTR(full_text, 1, 300), content_preview) as summary
+       FROM posts ORDER BY published_at DESC`;
+  return db.prepare(query).all() as Array<{ id: string; summary: string | null }>;
+}

@@ -1,22 +1,17 @@
 import type Database from "better-sqlite3";
+import {
+  type PostRow,
+  loadPostsWithLatestMetrics,
+  getLatestFollowerCount,
+  getFollowerSnapshots,
+  getDataAvailabilityCounts,
+  getContentGaps,
+  getTopicPerformanceData,
+  getHookPerformanceData,
+  getImageSubtypePerformanceData,
+} from "../db/stats-queries.js";
 
-// ── Types ──────────────────────────────────────────────────
-
-export interface PostRow {
-  id: string;
-  hook_text: string | null;
-  full_text: string | null;
-  content_preview: string | null;
-  content_type: string;
-  published_at: string;
-  impressions: number;
-  reactions: number;
-  comments: number;
-  reposts: number;
-  saves: number | null;
-  sends: number | null;
-  new_followers: number | null;
-}
+export type { PostRow };
 
 export interface PostWithER extends PostRow {
   er: number | null;
@@ -152,26 +147,7 @@ function assignQuadrants(posts: PostWithER[]): void {
 // ── DB loader ──────────────────────────────────────────────
 
 function loadPostsWithMetrics(db: Database.Database): PostWithER[] {
-  const rows = db
-    .prepare(
-      `SELECT
-         p.id, p.hook_text, p.full_text, p.content_preview, p.content_type, p.published_at,
-         COALESCE(pm.impressions, 0) as impressions,
-         COALESCE(pm.reactions, 0) as reactions,
-         COALESCE(pm.comments, 0) as comments,
-         COALESCE(pm.reposts, 0) as reposts,
-         pm.saves,
-         pm.sends,
-         pm.new_followers
-       FROM posts p
-       JOIN post_metrics pm ON pm.post_id = p.id
-       JOIN (
-         SELECT post_id, MAX(id) as max_id FROM post_metrics GROUP BY post_id
-       ) latest ON pm.id = latest.max_id
-       WHERE pm.impressions > 0
-       ORDER BY p.published_at DESC`
-    )
-    .all() as PostRow[];
+  const rows = loadPostsWithLatestMetrics(db);
 
   const posts = rows.map((r) => ({
     ...r,
@@ -208,11 +184,7 @@ function buildOverviewSection(
   globalIQR: number | null,
   timezone: string
 ): string {
-  const followerRow = db
-    .prepare(
-      "SELECT total_followers FROM follower_snapshots ORDER BY date DESC LIMIT 1"
-    )
-    .get() as { total_followers: number } | undefined;
+  const latestFollowers = getLatestFollowerCount(db);
 
   const dates = posts.map((p) => p.published_at).sort();
   const earliest = dates[0]
@@ -249,8 +221,8 @@ function buildOverviewSection(
     lines.push(`Total impressions: ${totalImpressions.toLocaleString()}`);
   }
 
-  if (followerRow) {
-    lines.push(`Current followers: ${followerRow.total_followers.toLocaleString()}`);
+  if (latestFollowers !== null) {
+    lines.push(`Current followers: ${latestFollowers.toLocaleString()}`);
   }
 
   // Quadrant distribution
@@ -630,32 +602,20 @@ function buildFrequencySection(posts: PostWithER[]): string {
 }
 
 function buildContentGapsSection(db: Database.Database): string {
-  const missingText = db
-    .prepare("SELECT COUNT(*) as count FROM posts WHERE full_text IS NULL")
-    .get() as { count: number };
-  const totalPosts = db
-    .prepare("SELECT COUNT(*) as count FROM posts")
-    .get() as { count: number };
-  const missingImages = db
-    .prepare(
-      `SELECT COUNT(*) as count FROM posts
-       WHERE image_local_paths IS NOT NULL
-         AND NOT EXISTS (SELECT 1 FROM ai_image_tags WHERE post_id = posts.id)`
-    )
-    .get() as { count: number };
+  const gaps = getContentGaps(db);
 
   const lines = ["## 12. Content Gaps (data quality notes)"];
 
-  if (missingText.count > 0) {
+  if (gaps.missingTextCount > 0) {
     lines.push(
-      `- ${missingText.count} of ${totalPosts.count} posts have no full text content (open LinkedIn with extension active to backfill)`
+      `- ${gaps.missingTextCount} of ${gaps.totalPostCount} posts have no full text content (open LinkedIn with extension active to backfill)`
     );
   } else {
     lines.push("- All posts have text content ✓");
   }
 
-  if (missingImages.count > 0) {
-    lines.push(`- ${missingImages.count} image posts not yet classified`);
+  if (gaps.unclassifiedImageCount > 0) {
+    lines.push(`- ${gaps.unclassifiedImageCount} image posts not yet classified`);
   }
 
   return lines.join("\n");
@@ -674,10 +634,7 @@ function buildWritingPromptSection(writingPrompt: string | null): string {
 // ── New enrichment sections ─────────────────────────────────
 
 function buildDataAvailablePreamble(db: Database.Database): string {
-  const tagCount = (db.prepare("SELECT COUNT(*) as c FROM ai_tags").get() as { c: number }).c;
-  const topicCount = (db.prepare("SELECT COUNT(DISTINCT taxonomy_id) as c FROM ai_post_topics").get() as { c: number }).c;
-  const imageTagCount = (db.prepare("SELECT COUNT(DISTINCT post_id) as c FROM ai_image_tags").get() as { c: number }).c;
-  const followerDays = (db.prepare("SELECT COUNT(*) as c FROM follower_snapshots").get() as { c: number }).c;
+  const { tagCount, topicCount, imageTagCount, followerDays } = getDataAvailabilityCounts(db);
 
   const lines = ["## 0. Data Available in This Report"];
   lines.push("This report includes the following enrichment data. Do NOT flag these as data or tool gaps:");
@@ -691,19 +648,7 @@ function buildDataAvailablePreamble(db: Database.Database): string {
 }
 
 function buildTopicPerformanceSection(db: Database.Database): string {
-  const rows = db.prepare(
-    `SELECT tax.name as topic,
-            pm.impressions, pm.reactions, pm.comments, pm.reposts, pm.saves, pm.sends
-     FROM ai_post_topics apt
-     JOIN ai_taxonomy tax ON tax.id = apt.taxonomy_id
-     JOIN post_metrics pm ON pm.post_id = apt.post_id
-     JOIN (SELECT post_id, MAX(id) as max_id FROM post_metrics GROUP BY post_id) latest
-       ON pm.id = latest.max_id
-     WHERE pm.impressions > 0`
-  ).all() as Array<{
-    topic: string; impressions: number; reactions: number;
-    comments: number; reposts: number; saves: number | null; sends: number | null;
-  }>;
+  const rows = getTopicPerformanceData(db);
 
   if (rows.length === 0) return "";
 
@@ -743,19 +688,7 @@ function buildTopicPerformanceSection(db: Database.Database): string {
 }
 
 function buildHookPerformanceSection(db: Database.Database): string {
-  const rows = db.prepare(
-    `SELECT t.hook_type, t.format_style,
-            pm.impressions, pm.reactions, pm.comments, pm.reposts, pm.saves, pm.sends
-     FROM ai_tags t
-     JOIN post_metrics pm ON pm.post_id = t.post_id
-     JOIN (SELECT post_id, MAX(id) as max_id FROM post_metrics GROUP BY post_id) latest
-       ON pm.id = latest.max_id
-     WHERE pm.impressions > 0`
-  ).all() as Array<{
-    hook_type: string | null; format_style: string | null;
-    impressions: number; reactions: number; comments: number;
-    reposts: number; saves: number | null; sends: number | null;
-  }>;
+  const rows = getHookPerformanceData(db);
 
   if (rows.length === 0) return "";
 
@@ -801,19 +734,7 @@ function buildHookPerformanceSection(db: Database.Database): string {
 }
 
 function buildImageSubtypeSection(db: Database.Database): string {
-  const rows = db.prepare(
-    `SELECT ait.format as subtype,
-            pm.impressions, pm.reactions, pm.comments, pm.reposts, pm.saves, pm.sends
-     FROM ai_image_tags ait
-     JOIN post_metrics pm ON pm.post_id = ait.post_id
-     JOIN (SELECT post_id, MAX(id) as max_id FROM post_metrics GROUP BY post_id) latest
-       ON pm.id = latest.max_id
-     WHERE pm.impressions > 0
-       AND ait.format IS NOT NULL`
-  ).all() as Array<{
-    subtype: string; impressions: number; reactions: number;
-    comments: number; reposts: number; saves: number | null; sends: number | null;
-  }>;
+  const rows = getImageSubtypePerformanceData(db);
 
   if (rows.length === 0) return "";
 
@@ -840,10 +761,7 @@ function buildImageSubtypeSection(db: Database.Database): string {
 }
 
 function buildFollowerGrowthSection(db: Database.Database): string {
-  const snapshots = db.prepare(
-    `SELECT date, total_followers FROM follower_snapshots
-     ORDER BY date DESC LIMIT 90`
-  ).all() as Array<{ date: string; total_followers: number }>;
+  const snapshots = getFollowerSnapshots(db, 90);
 
   if (snapshots.length === 0) return "";
 

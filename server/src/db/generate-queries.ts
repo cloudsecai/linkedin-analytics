@@ -258,13 +258,15 @@ export function updateGeneration(
     total_input_tokens: number;
     total_output_tokens: number;
     total_cost_cents: number;
+    prompt_snapshot: string;
+    published_text: string;
   }>
 ): void {
   const ALLOWED_COLUMNS = new Set([
     "selected_draft_indices", "combining_guidance", "final_draft",
     "quality_gate_json", "status", "matched_post_id",
     "total_input_tokens", "total_output_tokens", "total_cost_cents",
-    "prompt_snapshot",
+    "prompt_snapshot", "published_text",
   ]);
   const sets: string[] = ["updated_at = CURRENT_TIMESTAMP"];
   const params: any[] = [];
@@ -606,6 +608,11 @@ export function completeRetro(db: Database.Database, generationId: number, retro
   db.prepare(
     "UPDATE generations SET retro_json = ?, retro_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
   ).run(retroJson, generationId);
+}
+
+export function isPostMatchedToGeneration(db: Database.Database, postId: string): boolean {
+  const row = db.prepare("SELECT id FROM generations WHERE matched_post_id = ?").get(postId);
+  return row !== undefined;
 }
 
 export function getRetroResult(

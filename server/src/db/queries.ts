@@ -606,3 +606,15 @@ export function resolveScrapeErrors(db: Database.Database, personaId: number, pa
     "UPDATE scrape_errors SET resolved_at = CURRENT_TIMESTAMP, consecutive_count = 0 WHERE persona_id = ? AND page_type = ? AND resolved_at IS NULL"
   ).run(personaId, pageType);
 }
+
+export function getPostForRetro(db: Database.Database, postId: string): { id: string; full_text: string; published_at: string } | undefined {
+  return db.prepare(
+    "SELECT id, full_text, published_at FROM posts WHERE id = ? AND full_text IS NOT NULL"
+  ).get(postId) as { id: string; full_text: string; published_at: string } | undefined;
+}
+
+export function updatePostTranscript(db: Database.Database, postId: string, transcript: string): void {
+  db.prepare(
+    "UPDATE posts SET full_text = ? WHERE id = ? AND (full_text IS NULL OR full_text = hook_text OR length(full_text) < 100)"
+  ).run(transcript, postId);
+}

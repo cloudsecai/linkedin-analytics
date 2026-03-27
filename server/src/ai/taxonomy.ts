@@ -3,7 +3,7 @@ import type Database from "better-sqlite3";
 import type { AiLogger } from "./logger.js";
 import { MODELS } from "./client.js";
 import { taxonomyPrompt } from "./prompts.js";
-import { upsertTaxonomy } from "../db/ai-queries.js";
+import { upsertTaxonomy, getPostsForTaxonomy } from "../db/ai-queries.js";
 
 /**
  * Discover content taxonomy by sending all post summaries to the LLM.
@@ -17,16 +17,8 @@ export async function discoverTaxonomy(
 ): Promise<{ name: string; description: string }[]> {
   // If taxonomy exists, only send untagged posts (incremental update).
   // If no taxonomy, send all posts (full discovery).
-  const query = existingTaxonomy && existingTaxonomy.length > 0
-    ? `SELECT p.id, COALESCE(SUBSTR(p.full_text, 1, 300), p.content_preview) as summary
-       FROM posts p
-       LEFT JOIN ai_post_topics apt ON apt.post_id = p.id
-       WHERE apt.post_id IS NULL
-       ORDER BY p.published_at DESC`
-    : `SELECT id, COALESCE(SUBSTR(full_text, 1, 300), content_preview) as summary
-       FROM posts ORDER BY published_at DESC`;
-
-  const posts = db.prepare(query).all() as { id: string; summary: string | null }[];
+  const incrementalOnly = !!(existingTaxonomy && existingTaxonomy.length > 0);
+  const posts = getPostsForTaxonomy(db, incrementalOnly);
 
   // If taxonomy exists and no new posts need tagging, skip discovery
   if (existingTaxonomy && existingTaxonomy.length > 0 && posts.length === 0) {

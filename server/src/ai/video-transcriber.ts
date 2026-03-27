@@ -3,6 +3,7 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import type Database from "better-sqlite3";
+import { updatePostTranscript } from "../db/queries.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -175,9 +176,7 @@ export async function transcribePost(
     }
 
     // Step 4: Update post full_text with transcript
-    db.prepare(
-      `UPDATE posts SET full_text = ? WHERE id = ? AND (full_text IS NULL OR full_text = hook_text OR length(full_text) < 100)`
-    ).run(transcript, postId);
+    updatePostTranscript(db, postId, transcript);
 
     console.log(`[Transcribe] Post ${postId}: ${transcript.length} chars transcribed`);
     return { postId, transcript };
