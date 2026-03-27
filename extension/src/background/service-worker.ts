@@ -272,6 +272,7 @@ async function syncNextPersona() {
   }
 
   const persona: SyncPersona = syncPersonas[syncPersonaIndex];
+  console.log(`[ReachLab] Syncing persona ${syncPersonaIndex + 1}/${syncPersonas.length}: ${persona.name} (${persona.type})`);
 
   // Store active persona ID so postToServer can route correctly
   await chrome.storage.session.set({ syncActivePersonaId: persona.id });
@@ -384,6 +385,7 @@ async function syncCompanyPersona(persona: SyncPersona) {
     await chrome.tabs.remove(tabId);
 
     // Update per-persona sync state
+    console.log(`[ReachLab] Company sync complete for ${persona.name}: ${allAnalyticsData.length} posts scraped`);
     await finishPersonaSync(persona.id);
     await advanceToNextPersona();
   } catch (err: any) {
@@ -1008,6 +1010,7 @@ async function continueBackfill() {
 }
 
 async function finishSync() {
+  console.log("[ReachLab] All personas synced, finishing up...");
   const { syncTabId, syncActivePersonaId, syncPersonas } = await chrome.storage.session.get([
     "syncTabId", "syncActivePersonaId", "syncPersonas",
   ]);
